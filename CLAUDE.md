@@ -16,7 +16,8 @@ stack consists of:
 
 ```
 terragrunt.hcl              # root: OpenTofu engine (terraform_binary = "tofu"), S3 remote state
-                              # (S3-native locking, no DynamoDB) + provider generation
+                              # (S3-native locking, no DynamoDB) + provider generation. Terragrunt's
+                              # ONLY job in this repo — no module wiring, no dependency graph.
 modules/
   vpc/                       # VPC, public/private subnets, IGW, single NAT gateway
   k8s-nodes/                 # control-plane EC2 instance + worker ASG, kubeadm bootstrap via user_data,
@@ -25,11 +26,11 @@ modules/
   api-gateway/                # HTTP API + VPC Link fronting the private ALB
 live/
   prod/                      # only real Terragrunt environment; env.hcl + one dir per module
-    env.hcl
-    vpc/terragrunt.hcl
-    k8s-nodes/terragrunt.hcl
-    alb/terragrunt.hcl
-    api-gateway/terragrunt.hcl
+    env.hcl                  # environment/aws_region/state_bucket only, used by root terragrunt.hcl
+    vpc/                     # terragrunt.hcl (just `include "root"`) + main.tf + outputs.tf
+    k8s-nodes/               # same shape; main.tf reads vpc's state via terraform_remote_state
+    alb/                     # same shape; reads vpc + k8s-nodes state
+    api-gateway/             # same shape; reads vpc + alb state
   dev/                       # NOT Terragrunt-managed — local kind cluster, see live/dev/README.md
     kind-config.yaml
 helm/                        # workload charts, one dir per chart, values-dev.yaml / values-prod.yaml
@@ -40,13 +41,29 @@ helm/                        # workload charts, one dir per chart, values-dev.ya
 - **dev** — local only. `live/dev/kind-config.yaml` spins up a `kind` cluster approximating the prod
   topology (control-plane + 2 workers, ingress NodePort mapped to the host). No AWS calls, no
   Terragrunt unit — see `live/dev/README.md`.
-- **prod** — the only environment under Terragrunt, deployed to AWS `us-east-1`. Apply order is
-  `vpc` → `k8s-nodes` → `alb` → `api-gateway` (enforced via Terragrunt `dependency` blocks with
-  mock outputs for `plan`/`validate`). `live/prod/*/terragrunt.hcl` `inputs` blocks carry **only**
-  cross-module wiring (IDs/ARNs from `dependency` outputs) — static config (CIDRs, instance types,
-  `worker_count`, `kubernetes_version`, resource `name`) lives as variable **defaults** in each
-  module's `variables.tf`, not in Terragrunt. Override by editing the module default, not by adding
-  a Terragrunt input, unless a value needs to differ per environment.
+- **prod** — the only environment under Terragrunt, deployed to AWS `us-east-1`.
+
+### Module composition is plain OpenTofu, not Terragrunt
+
+Each `live/prod/<unit>/terragrunt.hcl` does nothing but `include "root"` (to get the generated
+`backend.tf`/`provider.tf`). The actual unit is a normal OpenTofu root module living alongside it:
+`main.tf` calls the shared module from `modules/` with a `module` block, and pulls any other unit's
+outputs via `data "terraform_remote_state"` (reading that unit's S3 state directly), not a Terragrunt
+`dependency` block. This was a deliberate choice to keep module composition vendor-neutral — these
+directories run under bare `tofu init/plan/apply` too, Terragrunt is only used here to avoid
+hand-writing the same S3 backend block four times.
+
+Consequence: there is no `dependency`-graph ordering or `run --all`. Apply in order by hand —
+`vpc` → `k8s-nodes` → `alb` → `api-gateway` — each `cd`'d into and applied before the next one's
+`terraform_remote_state` lookup will succeed. `plan`/`validate` on a downstream unit will fail with
+"Unable to find remote state" until its upstream unit has been applied at least once; that's expected,
+not a bug.
+- Static config (CIDRs, instance types, `worker_count`, `kubernetes_version`, resource `name`) lives
+  as variable **defaults** in each module's `variables.tf` — change it there, not by adding a
+  Terragrunt input or a `main.tf` argument, unless a value needs to differ per unit.
+- The S3 bucket/key/region literals inside each unit's `data "terraform_remote_state"` blocks are
+  hand-duplicated (not generated) and must be kept in sync with `live/prod/env.hcl` if the bucket or
+  region ever changes.
 
 ## State & Locking
 
@@ -61,8 +78,9 @@ helm/                        # workload charts, one dir per chart, values-dev.ya
 
 - Requires the `tofu` (OpenTofu) CLI on PATH, in addition to `terragrunt` — Terragrunt is configured
   to invoke `tofu`, not `terraform`.
-- Run Terragrunt from a `live/prod/<module>` directory, or `terragrunt run-all <cmd>` from `live/prod`
-  to operate on the whole stack in dependency order.
+- Run Terragrunt (`terragrunt plan`/`apply`) from inside each `live/prod/<unit>` directory, one at a
+  time, in dependency order (`vpc` → `k8s-nodes` → `alb` → `api-gateway`) — see "Module composition
+  is plain OpenTofu, not Terragrunt" above. There is no `run --all`/`run-all` here.
 - `live/prod/env.hcl` only holds Terragrunt-level concerns (`environment`, `aws_region`,
   `state_bucket`) used by the root `terragrunt.hcl` for the S3 backend/provider generation. Module
   config (`kubernetes_version`, instance types/counts, CIDRs, `name`) lives as defaults in each
