@@ -11,11 +11,23 @@ may be provisioned separately later — this directory would not be it.)
 kind create cluster --name infra-local --config kind-config.yaml
 kubectl cluster-info --context kind-infra-local
 
-# install workloads, e.g.
-helm upgrade --install <chart> ../../helm/<chart> -f ../../helm/<chart>/values-local.yaml
+# Postgres — required by contacts-micro-service's values-local.yaml (db.host: postgres)
+kubectl apply -f postgres.yaml
+kubectl rollout status deployment/postgres
 
-# app is reachable on the ingress NodePort mapped to the host
-curl http://localhost:8080/
+# build the app image and load it into kind's nodes (kind can't pull from a local docker
+# daemon on its own — images must be built + loaded explicitly)
+docker build -t contacts-micro-service-app:latest ~/projects/contacts-micro-service
+kind load docker-image contacts-micro-service-app:latest --name infra-local
+
+# install workloads
+helm upgrade --install contacts ../../helm/contacts-micro-service -f ../../helm/contacts-micro-service/values-local.yaml
+kubectl rollout status deployment/contacts-micro-service
+
+# no ingress controller is installed yet, so there's nothing listening on the NodePort
+# 30080 -> host 8080 mapping in kind-config.yaml — reach the app via port-forward instead:
+kubectl port-forward svc/contacts-micro-service 8080:8080
+curl http://localhost:8080/api/contacts
 
 # teardown
 kind delete cluster --name infra-local
