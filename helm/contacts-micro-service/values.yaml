@@ -12,6 +12,17 @@ springProfile: local
 service:
   port: 8080
 
+# Routes through an in-cluster ingress controller listening on NodePort 30080 (see
+# modules/alb's ingress_node_port and live/local/kind-config.yaml) — the same NodePort a
+# prod ALB target group forwards to. No host/path routing needed since this is currently
+# the only workload in the cluster; catch-all on "/".
+ingress:
+  enabled: false
+  className: nginx
+  host: ""
+  path: /
+  pathType: Prefix
+
 resources:
   requests:
     cpu: 100m

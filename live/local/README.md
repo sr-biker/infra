@@ -11,6 +11,19 @@ may be provisioned separately later — this directory would not be it.)
 kind create cluster --name infra-local --config kind-config.yaml
 kubectl cluster-info --context kind-infra-local
 
+# ingress-nginx, bound to NodePort 30080 — mirrors modules/alb's ingress_node_port, which
+# is what a real prod ALB target group forwards to. This is what makes `curl localhost:8080`
+# (kind-config.yaml's hostPort mapping) exercise the same path prod's ALB would: NodePort ->
+# ingress controller -> Ingress -> Service -> pod, not just a kubectl port-forward shortcut.
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.service.type=NodePort \
+  --set controller.service.nodePorts.http=30080 \
+  --set controller.hostPort.enabled=false \
+  --set controller.watchIngressWithoutClass=true
+kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller
+
 # Postgres — required by contacts-micro-service's values-local.yaml (db.host: postgres)
 kubectl apply -f postgres.yaml
 kubectl rollout status deployment/postgres
@@ -20,13 +33,11 @@ kubectl rollout status deployment/postgres
 docker build -t contacts-micro-service-app:latest ~/projects/contacts-micro-service
 kind load docker-image contacts-micro-service-app:latest --name infra-local
 
-# install workloads
+# install workloads (values-local.yaml sets ingress.enabled: true)
 helm upgrade --install contacts ../../helm/contacts-micro-service -f ../../helm/contacts-micro-service/values-local.yaml
 kubectl rollout status deployment/contacts-micro-service
 
-# no ingress controller is installed yet, so there's nothing listening on the NodePort
-# 30080 -> host 8080 mapping in kind-config.yaml — reach the app via port-forward instead:
-kubectl port-forward svc/contacts-micro-service 8080:8080
+# reachable the same way a real ALB would reach it in prod:
 curl http://localhost:8080/api/contacts
 
 # teardown

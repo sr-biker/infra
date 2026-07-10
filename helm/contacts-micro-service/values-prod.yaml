@@ -8,6 +8,9 @@ image:
 
 springProfile: prod
 
+ingress:
+  enabled: true
+
 resources:
   requests:
     cpu: 250m
