@@ -1,0 +1,46 @@
+replicaCount: 1
+
+image:
+  repository: contacts-micro-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Spring profile to activate — dev or prod (see application-dev.yml / application-prod.yml
+# in the contacts-micro-service repo).
+springProfile: dev
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  liveness:
+    path: /actuator/health/liveness
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /actuator/health/readiness
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 3
+
+# Plain DB env vars, used when db.existingSecret is not set. Fine for dev (values-dev.yaml);
+# prod (values-prod.yaml) sets db.existingSecret instead and leaves these unset.
+db:
+  host: ""
+  port: "5432"
+  name: ""
+  username: ""
+  password: ""
+  # Name of a pre-existing Kubernetes Secret with DB_USERNAME/DB_PASSWORD/DB_HOST/DB_PORT/DB_NAME
+  # keys. When set, this is used instead of the plain db.* values above — populate it out-of-band
+  # (e.g. synced from the rds module's Secrets Manager entry) before deploying.
+  existingSecret: ""
