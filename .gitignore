@@ -1,0 +1,11 @@
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+.terragrunt-cache/
+*.tfplan
+crash.log
+*.pem
+*.iml
+.idea/
+kubeconfig*

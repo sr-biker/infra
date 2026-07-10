@@ -1,0 +1,13 @@
+# kind cluster approximating the prod topology: one control-plane + two workers,
+# with the ingress NodePort range exposed to the host so it stands in for the
+# private ALB -> NodePort path used in prod.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+  - role: worker
