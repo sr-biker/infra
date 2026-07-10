@@ -24,6 +24,8 @@ modules/
                               # join command handed off through SSM Parameter Store
   alb/                       # private ALB + target group (NodePort 30080) attached to the worker ASG
   api-gateway/                # HTTP API + VPC Link fronting the private ALB
+  rds/                       # standalone PostgreSQL RDS instance + its own VPC, ported from
+                              # ~/projects/cdk/stacks/rds_stack.py — see "rds module" below
 live/
   prod/                      # only real Terragrunt environment; env.hcl + one dir per module
     env.hcl                  # environment/aws_region/state_bucket only, used by root terragrunt.hcl
@@ -31,6 +33,7 @@ live/
     k8s-nodes/               # same shape; main.tf reads vpc's state via terraform_remote_state
     alb/                     # same shape; reads vpc + k8s-nodes state
     api-gateway/             # same shape; reads vpc + alb state
+    rds/                     # same shape but no terraform_remote_state deps — self-contained
   dev/                       # NOT Terragrunt-managed — local kind cluster, see live/dev/README.md
     kind-config.yaml
 helm/                        # workload charts, one dir per chart, values-dev.yaml / values-prod.yaml
@@ -64,6 +67,23 @@ not a bug.
 - The S3 bucket/key/region literals inside each unit's `data "terraform_remote_state"` blocks are
   hand-duplicated (not generated) and must be kept in sync with `live/prod/env.hcl` if the bucket or
   region ever changes.
+
+### rds module
+
+`modules/rds` is a direct port of `~/projects/cdk/stacks/rds_stack.py` (a separate AWS CDK repo) —
+not wired into the k8s stack. It provisions **its own** VPC (`10.1.0.0/16` by default, disjoint from
+the k8s stack's `10.0.0.0/16`) with public/private/isolated subnet tiers, a single-AZ `db.t3.micro`
+PostgreSQL instance in the isolated tier, RDS-managed credentials in Secrets Manager
+(`manage_master_user_password`, replacing the CDK version's `Credentials.from_generated_secret`), and
+an EventBridge Scheduler stop/start pair (`aws_scheduler_schedule`, replacing the CDK version's
+`CfnSchedule`) that stops the DB nightly and starts it on weekday mornings.
+
+This is a **dev/cost-optimized** shape ported as-is from the source stack, not a production DB config:
+single-AZ, deletion protection off, `skip_final_snapshot = true`, and the whole instance goes offline
+overnight/weekends via the scheduler. A production Postgres stack would instead want
+`multi_az = true`, `deletion_protection = true`, no stop/start schedule, longer backup retention, and
+Performance Insights on — none of that is here; add it deliberately if `rds` ever needs to hold real
+prod data.
 
 ## State & Locking
 
