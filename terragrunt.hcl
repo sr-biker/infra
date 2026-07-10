@@ -2,6 +2,9 @@ locals {
   env_vars = read_terragrunt_config(find_in_parent_folders("env.hcl"))
 }
 
+# Use OpenTofu as the IaC engine instead of HashiCorp Terraform.
+terraform_binary = "tofu"
+
 remote_state {
   backend = "s3"
 
