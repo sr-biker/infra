@@ -11,6 +11,7 @@ dependency "vpc" {
 
   mock_outputs = {
     vpc_id             = "vpc-mock"
+    vpc_cidr           = "10.0.0.0/16"
     private_subnet_ids = ["subnet-mock1", "subnet-mock2"]
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
@@ -28,6 +29,7 @@ dependency "k8s_nodes" {
 
 inputs = {
   vpc_id                 = dependency.vpc.outputs.vpc_id
+  vpc_cidr               = dependency.vpc.outputs.vpc_cidr
   private_subnet_ids     = dependency.vpc.outputs.private_subnet_ids
   node_security_group_id = dependency.k8s_nodes.outputs.node_security_group_id
   worker_asg_name        = dependency.k8s_nodes.outputs.worker_asg_name

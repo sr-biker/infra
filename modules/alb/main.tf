@@ -26,11 +26,7 @@ resource "aws_security_group_rule" "alb_ingress_http" {
   to_port           = 80
   protocol          = "tcp"
   security_group_id = aws_security_group.alb.id
-  cidr_blocks       = [data.aws_vpc.this.cidr_block]
-}
-
-data "aws_vpc" "this" {
-  id = var.vpc_id
+  cidr_blocks       = [var.vpc_cidr]
 }
 
 resource "aws_security_group_rule" "alb_to_nodeport" {
