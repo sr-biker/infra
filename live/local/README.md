@@ -11,31 +11,39 @@ may be provisioned separately later — this directory would not be it.)
 kind create cluster --name infra-local --config kind-config.yaml
 kubectl cluster-info --context kind-infra-local
 
+# This machine may have other kind/minikube clusters/contexts around (from unrelated work).
+# Pin the context explicitly on every command below rather than relying on whatever
+# `kubectl config current-context` happens to be — it can drift out from under you.
+KCTX=kind-infra-local
+
 # ingress-nginx, bound to NodePort 30080 — mirrors modules/alb's ingress_node_port, which
 # is what a real prod ALB target group forwards to. This is what makes `curl localhost:8080`
 # (kind-config.yaml's hostPort mapping) exercise the same path prod's ALB would: NodePort ->
 # ingress controller -> Ingress -> Service -> pod, not just a kubectl port-forward shortcut.
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm install ingress-nginx ingress-nginx/ingress-nginx \
+helm install ingress-nginx ingress-nginx/ingress-nginx --kube-context $KCTX \
   --namespace ingress-nginx --create-namespace \
   --set controller.service.type=NodePort \
   --set controller.service.nodePorts.http=30080 \
   --set controller.hostPort.enabled=false \
   --set controller.watchIngressWithoutClass=true
-kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller
+kubectl --context $KCTX -n ingress-nginx rollout status deployment/ingress-nginx-controller
 
 # Postgres — required by contacts-micro-service's values-local.yaml (db.host: postgres)
-kubectl apply -f postgres.yaml
-kubectl rollout status deployment/postgres
+kubectl --context $KCTX apply -f postgres.yaml
+kubectl --context $KCTX rollout status deployment/postgres
 
 # build the app image and load it into kind's nodes (kind can't pull from a local docker
 # daemon on its own — images must be built + loaded explicitly)
 docker build -t contacts-micro-service-app:latest ~/projects/contacts-micro-service
 kind load docker-image contacts-micro-service-app:latest --name infra-local
 
-# install workloads (values-local.yaml sets ingress.enabled: true)
-helm upgrade --install contacts ../../helm/contacts-micro-service -f ../../helm/contacts-micro-service/values-local.yaml
-kubectl rollout status deployment/contacts-micro-service
+# install workloads — chart lives in the app's own repo, not here
+# (values-local.yaml sets ingress.enabled: true)
+helm upgrade --install contacts ~/projects/contacts-micro-service/helm/contacts-micro-service \
+  -f ~/projects/contacts-micro-service/helm/contacts-micro-service/values-local.yaml \
+  --kube-context $KCTX
+kubectl --context $KCTX rollout status deployment/contacts-micro-service
 
 # reachable the same way a real ALB would reach it in prod:
 curl http://localhost:8080/api/contacts

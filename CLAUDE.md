@@ -36,7 +36,9 @@ live/
     rds/                     # same shape but no terraform_remote_state deps — self-contained
   local/                     # NOT Terragrunt-managed — local kind cluster, see live/local/README.md
     kind-config.yaml
-helm/                        # workload charts, one dir per chart, values-local.yaml / values-prod.yaml
+helm/                        # placeholder for cluster-wide/shared charts only — per-app workload
+                              # charts live in the app's own repo (e.g. contacts-micro-service's
+                              # chart is at ~/projects/contacts-micro-service/helm/contacts-micro-service)
 ```
 
 ## Environments
