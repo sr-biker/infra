@@ -42,7 +42,11 @@ helm/                        # workload charts, one dir per chart, values-dev.ya
   Terragrunt unit — see `live/dev/README.md`.
 - **prod** — the only environment under Terragrunt, deployed to AWS `us-east-1`. Apply order is
   `vpc` → `k8s-nodes` → `alb` → `api-gateway` (enforced via Terragrunt `dependency` blocks with
-  mock outputs for `plan`/`validate`).
+  mock outputs for `plan`/`validate`). `live/prod/*/terragrunt.hcl` `inputs` blocks carry **only**
+  cross-module wiring (IDs/ARNs from `dependency` outputs) — static config (CIDRs, instance types,
+  `worker_count`, `kubernetes_version`, resource `name`) lives as variable **defaults** in each
+  module's `variables.tf`, not in Terragrunt. Override by editing the module default, not by adding
+  a Terragrunt input, unless a value needs to differ per environment.
 
 ## State & Locking
 
@@ -59,8 +63,10 @@ helm/                        # workload charts, one dir per chart, values-dev.ya
   to invoke `tofu`, not `terraform`.
 - Run Terragrunt from a `live/prod/<module>` directory, or `terragrunt run-all <cmd>` from `live/prod`
   to operate on the whole stack in dependency order.
-- The `kubernetes_version`, instance types/counts, and CIDRs are all in `live/prod/env.hcl` — change
-  them there, not in the modules.
+- `live/prod/env.hcl` only holds Terragrunt-level concerns (`environment`, `aws_region`,
+  `state_bucket`) used by the root `terragrunt.hcl` for the S3 backend/provider generation. Module
+  config (`kubernetes_version`, instance types/counts, CIDRs, `name`) lives as defaults in each
+  module's `variables.tf` instead — change it there.
 - `modules/k8s-nodes` templates (`templates/*.sh.tpl`) use `$${...}` for literal shell variables and
   `${...}` for OpenTofu-interpolated values — keep that distinction when editing them.
 - Any ingress controller deployed via Helm must listen on NodePort 30080 to match

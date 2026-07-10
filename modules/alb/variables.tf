@@ -1,5 +1,6 @@
 variable "name" {
-  type = string
+  type    = string
+  default = "infra-prod"
 }
 
 variable "vpc_id" {

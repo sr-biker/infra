@@ -1,5 +1,6 @@
 variable "name" {
-  type = string
+  type    = string
+  default = "infra-prod"
 }
 
 variable "vpc_id" {
@@ -15,19 +16,23 @@ variable "private_subnet_ids" {
 }
 
 variable "control_plane_instance_type" {
-  type = string
+  type    = string
+  default = "t3.medium"
 }
 
 variable "worker_instance_type" {
-  type = string
+  type    = string
+  default = "t3.medium"
 }
 
 variable "worker_count" {
-  type = number
+  type    = number
+  default = 2
 }
 
 variable "kubernetes_version" {
   type        = string
+  default     = "1.30"
   description = "Kubernetes minor version, e.g. 1.30"
 }
 

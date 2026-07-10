@@ -2,10 +2,6 @@ include "root" {
   path = find_in_parent_folders("terragrunt.hcl")
 }
 
-locals {
-  env_vars = read_terragrunt_config(find_in_parent_folders("env.hcl"))
-}
-
 terraform {
   source = "${get_repo_root()}/modules/alb"
 }
@@ -31,7 +27,6 @@ dependency "k8s_nodes" {
 }
 
 inputs = {
-  name                   = "infra-${local.env_vars.locals.environment}"
   vpc_id                 = dependency.vpc.outputs.vpc_id
   private_subnet_ids     = dependency.vpc.outputs.private_subnet_ids
   node_security_group_id = dependency.k8s_nodes.outputs.node_security_group_id

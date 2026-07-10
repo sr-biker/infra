@@ -2,10 +2,6 @@ include "root" {
   path = find_in_parent_folders("terragrunt.hcl")
 }
 
-locals {
-  env_vars = read_terragrunt_config(find_in_parent_folders("env.hcl"))
-}
-
 terraform {
   source = "${get_repo_root()}/modules/api-gateway"
 }
@@ -30,7 +26,6 @@ dependency "alb" {
 }
 
 inputs = {
-  name                  = "infra-${local.env_vars.locals.environment}"
   private_subnet_ids    = dependency.vpc.outputs.private_subnet_ids
   alb_security_group_id = dependency.alb.outputs.alb_security_group_id
   alb_listener_arn      = dependency.alb.outputs.listener_arn
