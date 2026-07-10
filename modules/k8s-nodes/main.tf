@@ -47,7 +47,7 @@ resource "aws_iam_role_policy" "join_param" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["ssm:PutParameter", "ssm:GetParameter"]
-      Resource = "arn:aws:ssm:${data.aws_region.current.name}:*:parameter${local.join_param_name}"
+      Resource = "arn:aws:ssm:${data.aws_region.current.region}:*:parameter${local.join_param_name}"
     }]
   })
 }
