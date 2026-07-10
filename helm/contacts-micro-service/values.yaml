@@ -5,9 +5,9 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-# Spring profile to activate — dev or prod (see application-dev.yml / application-prod.yml
+# Spring profile to activate — local or prod (see application-local.yml / application-prod.yml
 # in the contacts-micro-service repo).
-springProfile: dev
+springProfile: local
 
 service:
   port: 8080
@@ -32,7 +32,7 @@ probes:
     periodSeconds: 5
     failureThreshold: 3
 
-# Plain DB env vars, used when db.existingSecret is not set. Fine for dev (values-dev.yaml);
+# Plain DB env vars, used when db.existingSecret is not set. Fine for local (values-local.yaml);
 # prod (values-prod.yaml) sets db.existingSecret instead and leaves these unset.
 db:
   host: ""

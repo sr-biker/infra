@@ -5,7 +5,7 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-springProfile: dev
+springProfile: local
 
 resources:
   requests:

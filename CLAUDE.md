@@ -34,16 +34,18 @@ live/
     alb/                     # same shape; reads vpc + k8s-nodes state
     api-gateway/             # same shape; reads vpc + alb state
     rds/                     # same shape but no terraform_remote_state deps — self-contained
-  dev/                       # NOT Terragrunt-managed — local kind cluster, see live/dev/README.md
+  local/                     # NOT Terragrunt-managed — local kind cluster, see live/local/README.md
     kind-config.yaml
-helm/                        # workload charts, one dir per chart, values-dev.yaml / values-prod.yaml
+helm/                        # workload charts, one dir per chart, values-local.yaml / values-prod.yaml
 ```
 
 ## Environments
 
-- **dev** — local only. `live/dev/kind-config.yaml` spins up a `kind` cluster approximating the prod
-  topology (control-plane + 2 workers, ingress NodePort mapped to the host). No AWS calls, no
-  Terragrunt unit — see `live/dev/README.md`.
+- **local** — local only, not AWS. `live/local/kind-config.yaml` spins up a `kind` cluster
+  approximating the prod topology (control-plane + 2 workers, ingress NodePort mapped to the host).
+  No AWS calls, no Terragrunt unit — see `live/local/README.md`. Deliberately *not* called `dev` —
+  a real AWS `dev` account/environment may be provisioned separately later (possibly under a
+  different AWS account than `prod`), and `local` would not be it.
 - **prod** — the only environment under Terragrunt, deployed to AWS `us-east-1`.
 
 ### Module composition is plain OpenTofu, not Terragrunt
@@ -78,7 +80,8 @@ PostgreSQL instance in the isolated tier, RDS-managed credentials in Secrets Man
 an EventBridge Scheduler stop/start pair (`aws_scheduler_schedule`, replacing the CDK version's
 `CfnSchedule`) that stops the DB nightly and starts it on weekday mornings.
 
-This is a **dev/cost-optimized** shape ported as-is from the source stack, not a production DB config:
+This is a **cost-optimized, non-production** shape ported as-is from the source stack, not a
+production DB config:
 single-AZ, deletion protection off, `skip_final_snapshot = true`, and the whole instance goes offline
 overnight/weekends via the scheduler. A production Postgres stack would instead want
 `multi_az = true`, `deletion_protection = true`, no stop/start schedule, longer backup retention, and
@@ -108,4 +111,4 @@ prod data.
 - `modules/k8s-nodes` templates (`templates/*.sh.tpl`) use `$${...}` for literal shell variables and
   `${...}` for OpenTofu-interpolated values — keep that distinction when editing them.
 - Any ingress controller deployed via Helm must listen on NodePort 30080 to match
-  `modules/alb`'s `ingress_node_port` default and `live/dev/kind-config.yaml`'s port mapping.
+  `modules/alb`'s `ingress_node_port` default and `live/local/kind-config.yaml`'s port mapping.
