@@ -17,12 +17,12 @@ variable "private_subnet_ids" {
 
 variable "control_plane_instance_type" {
   type    = string
-  default = "t3.medium"
+  default = "t4g.medium"
 }
 
 variable "worker_instance_type" {
   type    = string
-  default = "t3.medium"
+  default = "t4g.medium"
 }
 
 variable "worker_count" {
@@ -34,10 +34,4 @@ variable "kubernetes_version" {
   type        = string
   default     = "1.30"
   description = "Kubernetes minor version, e.g. 1.30"
-}
-
-variable "ssh_key_name" {
-  type        = string
-  default     = null
-  description = "Existing EC2 key pair name for SSH access, optional"
 }

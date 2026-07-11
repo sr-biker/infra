@@ -5,9 +5,13 @@ KUBERNETES_VERSION="${kubernetes_version}"
 JOIN_PARAM_NAME="${join_param_name}"
 POD_CIDR="192.168.0.0/16"
 
+# --- SELinux: permissive, same tradeoff most kubeadm-on-AL guides make rather than
+# authoring full SELinux policies for kubelet/containerd/CNI ---
+setenforce 0 || true
+sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+
 # --- container runtime + kubeadm/kubelet/kubectl ---
-apt-get update
-apt-get install -y apt-transport-https ca-certificates curl gpg awscli containerd
+dnf install -y containerd
 
 mkdir -p /etc/containerd
 containerd config default | tee /etc/containerd/config.toml
@@ -15,14 +19,18 @@ sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.to
 systemctl restart containerd
 systemctl enable containerd
 
-curl -fsSL "https://pkgs.k8s.io/core:/stable:/v$${KUBERNETES_VERSION}/deb/Release.key" | \
-  gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v$${KUBERNETES_VERSION}/deb/ /" | \
-  tee /etc/apt/sources.list.d/kubernetes.list
+cat <<REPO | tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v$${KUBERNETES_VERSION}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v$${KUBERNETES_VERSION}/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+REPO
 
-apt-get update
-apt-get install -y kubelet kubeadm kubectl
-apt-mark hold kubelet kubeadm kubectl
+dnf install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+systemctl enable kubelet
 
 swapoff -a
 sed -i '/ swap / s/^/#/' /etc/fstab
@@ -48,6 +56,8 @@ export KUBECONFIG=/root/.kube/config
 kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
 
 # --- publish join command for workers via SSM Parameter Store ---
+# AL2023 ships aws-cli v2 and amazon-ssm-agent preinstalled/enabled — no package install
+# needed for either, unlike the prior Ubuntu-based script.
 REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | cut -d '"' -f4)
 JOIN_COMMAND=$(kubeadm token create --print-join-command)
 

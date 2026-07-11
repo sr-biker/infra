@@ -1,17 +1,23 @@
 data "aws_region" "current" {}
 
-data "aws_ami" "ubuntu" {
+data "aws_ami" "al2023" {
   most_recent = true
-  owners      = ["099720109477"] # Canonical
+  owners      = ["amazon"]
 
   filter {
+    # arm64 to match the Graviton (t4g) instance types below.
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+    values = ["al2023-ami-2023.*-kernel-*-arm64"]
   }
 
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["arm64"]
   }
 }
 
@@ -123,12 +129,11 @@ resource "aws_security_group_rule" "vpc_https" {
 
 # --- control plane (single instance) ---
 resource "aws_instance" "control_plane" {
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = data.aws_ami.al2023.id
   instance_type          = var.control_plane_instance_type
   subnet_id              = var.private_subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.node.id]
   iam_instance_profile   = aws_iam_instance_profile.node.name
-  key_name               = var.ssh_key_name
 
   user_data = templatefile("${path.module}/templates/control-plane.sh.tpl", {
     kubernetes_version = var.kubernetes_version
@@ -144,9 +149,8 @@ resource "aws_instance" "control_plane" {
 # --- workers (autoscaling group across private subnets) ---
 resource "aws_launch_template" "worker" {
   name_prefix   = "${var.name}-worker-"
-  image_id      = data.aws_ami.ubuntu.id
+  image_id      = data.aws_ami.al2023.id
   instance_type = var.worker_instance_type
-  key_name      = var.ssh_key_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.node.name
