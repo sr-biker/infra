@@ -17,12 +17,12 @@ variable "private_subnet_ids" {
 
 variable "control_plane_instance_type" {
   type    = string
-  default = "t4g.medium"
+  default = "t4g.small"
 }
 
 variable "worker_instance_type" {
   type    = string
-  default = "t4g.medium"
+  default = "t4g.small"
 }
 
 variable "worker_count" {
