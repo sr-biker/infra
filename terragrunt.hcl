@@ -15,7 +15,7 @@ remote_state {
 
   config = {
     bucket       = local.env_vars.locals.state_bucket
-    key          = "${path_relative_to_include()}/terraform.tfstate"
+    key          = "${path_relative_to_include("root")}/terraform.tfstate"
     region       = local.env_vars.locals.aws_region
     encrypt      = true
     use_lockfile = true
