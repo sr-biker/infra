@@ -40,9 +40,15 @@ net.bridge.bridge-nf-call-ip6tables = 1
 SYSCTL
 sysctl --system
 
+# --- IMDS: this AMI/account enforces IMDSv2 (token required) — token-less curl to any
+# 169.254.169.254 path returns 401, not a normal 200 with data. A prior Ubuntu-based
+# version of this script assumed token-less IMDSv1 worked and silently got an empty
+# REGION, which made the aws ssm get-parameter call below fail on every attempt.
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
 # AL2023 ships aws-cli v2 preinstalled — no package install needed for it, unlike the
 # prior Ubuntu-based script.
-REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | cut -d '"' -f4)
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $${IMDS_TOKEN}" http://169.254.169.254/latest/meta-data/placement/region)
 
 # control plane writes the join command shortly after boot; poll until it's available
 for i in $(seq 1 30); do

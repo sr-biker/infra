@@ -42,8 +42,17 @@ net.bridge.bridge-nf-call-ip6tables = 1
 SYSCTL
 sysctl --system
 
+# --- IMDS: this AMI/account enforces IMDSv2 (token required) — token-less curl to any
+# 169.254.169.254 path returns 401, not a normal 200 with data. A prior Ubuntu-based
+# version of this script assumed token-less IMDSv1 worked and silently got empty values
+# for both PRIVATE_IP and REGION below.
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+imds() {
+  curl -s -H "X-aws-ec2-metadata-token: $${IMDS_TOKEN}" "http://169.254.169.254/latest/$${1}"
+}
+
 # --- bootstrap control plane ---
-PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+PRIVATE_IP=$(imds meta-data/local-ipv4)
 
 kubeadm init \
   --pod-network-cidr="$${POD_CIDR}" \
@@ -58,7 +67,7 @@ kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/
 # --- publish join command for workers via SSM Parameter Store ---
 # AL2023 ships aws-cli v2 and amazon-ssm-agent preinstalled/enabled — no package install
 # needed for either, unlike the prior Ubuntu-based script.
-REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | cut -d '"' -f4)
+REGION=$(imds meta-data/placement/region)
 JOIN_COMMAND=$(kubeadm token create --print-join-command)
 
 aws ssm put-parameter \
