@@ -90,6 +90,28 @@ overnight/weekends via the scheduler. A production Postgres stack would instead 
 Performance Insights on — none of that is here; add it deliberately if `rds` ever needs to hold real
 prod data.
 
+### Log shipping (prod)
+
+`live/prod/cloudwatch-log-shipper.yaml` is a raw k8s manifest (not a Helm chart, not Terragrunt-managed
+— applied directly with `kubectl` once the prod cluster is reachable) deploying `aws-for-fluent-bit` as
+a **DaemonSet**, one pod per node, tailing every container's logs via kubelet's standard
+`/var/log/containers/*.log` symlinks and shipping to CloudWatch Logs
+(`/infra-prod/containers/<namespace>` log groups). DaemonSet was chosen over a per-pod sidecar since
+the app already logs to stdout — a cluster-wide collector needs zero app-side changes and costs one pod
+per node instead of one per app replica.
+
+- Parser is `cri` (containerd's plain-text CRI log format), not `docker` (JSON format) — this cluster
+  runs containerd (kubeadm default), not dockershim. Using the wrong parser silently fails to parse
+  every log line.
+- Credentials come from the EC2 instance profile (`modules/k8s-nodes`' `aws_iam_role.node` +
+  the `cloudwatch_logs` policy added there, scoped to `log-group:/infra-prod/*`) — no
+  IRSA/pod-identity exists here since this isn't EKS, so every pod on every node implicitly has
+  whatever that role grants. Keep that policy scoped tight; don't broaden it to `logs:*`.
+- Validated by deploying it to the local `kind` cluster: fluent-bit correctly parsed real container
+  logs and built correct log-group/stream names, then failed only at the AWS-credentials step (no
+  IMDS on `kind`) — expected, and confirms the config itself is correct. It is not left running in
+  `local` (deleted after verification); this manifest is prod-only.
+
 ## State & Locking
 
 - Backend: S3, configured in root `terragrunt.hcl`, keyed per-module via `path_relative_to_include()`.

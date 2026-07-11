@@ -52,6 +52,31 @@ resource "aws_iam_role_policy" "join_param" {
   })
 }
 
+resource "aws_iam_role_policy" "cloudwatch_logs" {
+  name = "${var.name}-cloudwatch-logs"
+  role = aws_iam_role.node.id
+
+  # No IRSA/pod identity here (kubeadm, not EKS) — this is the instance profile every pod
+  # on every node implicitly gets, so it's scoped to this cluster's log-group prefix only,
+  # not "logs:*" on everything. Used by the aws-for-fluent-bit DaemonSet
+  # (live/prod/cloudwatch-log-shipper.yaml) to ship container logs to CloudWatch Logs.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:PutRetentionPolicy",
+      ]
+      Resource = "arn:aws:logs:${data.aws_region.current.region}:*:log-group:/${var.name}/*"
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "node" {
   name = "${var.name}-k8s-node"
   role = aws_iam_role.node.name

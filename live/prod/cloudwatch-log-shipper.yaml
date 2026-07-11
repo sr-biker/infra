@@ -1,0 +1,147 @@
+# DaemonSet log shipper for the prod kubeadm cluster — one pod per node, tailing every
+# container's stdout/stderr (via kubelet's standard /var/log/containers symlinks, which
+# exist regardless of container runtime) and shipping to CloudWatch Logs.
+#
+# Uses aws-for-fluent-bit (AWS-maintained image with the cloudwatch_logs output plugin
+# built in) rather than a sidecar per pod — see infra CLAUDE.md for why DaemonSet was
+# chosen over sidecar for this. Credentials come from the EC2 instance profile
+# (modules/k8s-nodes' aws_iam_role.node + the cloudwatch_logs policy added there), since
+# this isn't EKS and there's no IRSA/pod identity.
+#
+# Apply once the prod cluster is reachable (kubectl against the control plane, e.g. via
+# SSM port-forwarding — there is no public/direct kubectl access set up yet):
+#   kubectl apply -f cloudwatch-log-shipper.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudwatch-log-shipper
+  namespace: logging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cloudwatch-log-shipper
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cloudwatch-log-shipper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cloudwatch-log-shipper
+subjects:
+  - kind: ServiceAccount
+    name: cloudwatch-log-shipper
+    namespace: logging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudwatch-log-shipper-config
+  namespace: logging
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         5
+        Log_Level     info
+        Daemon        off
+        Parsers_File  parsers.conf
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*.log
+        # kubeadm's default runtime is containerd, whose CRI log format is plain text
+        # ("<ts> <stream> <flag> <line>"), not the JSON docker log format — use the "cri"
+        # parser, not "docker", or every log line will fail to parse.
+        Parser            cri
+        Tag               kube.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     10MB
+        Skip_Long_Lines   On
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Merge_Log           On
+        Keep_Log            Off
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude On
+
+    [OUTPUT]
+        Name                cloudwatch_logs
+        Match               kube.*
+        region              us-east-1
+        log_group_name      /infra-prod/containers
+        log_stream_prefix   fluentbit-
+        log_group_template  /infra-prod/containers/$kubernetes['namespace_name']
+        auto_create_group   true
+        log_retention_days  30
+
+  parsers.conf: |
+    [PARSER]
+        Name        cri
+        Format      regex
+        Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cloudwatch-log-shipper
+  namespace: logging
+spec:
+  selector:
+    matchLabels:
+      app: cloudwatch-log-shipper
+  template:
+    metadata:
+      labels:
+        app: cloudwatch-log-shipper
+    spec:
+      serviceAccountName: cloudwatch-log-shipper
+      # Run on every node, including the control plane — its logs should ship too.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      containers:
+        - name: fluent-bit
+          image: public.ecr.aws/aws-observability/aws-for-fluent-bit:stable
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc/fluent-bit.conf
+              subPath: fluent-bit.conf
+            - name: config
+              mountPath: /fluent-bit/etc/parsers.conf
+              subPath: parsers.conf
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: cloudwatch-log-shipper-config
+        # /var/log/containers/*.log symlinks to /var/log/pods/... , both under /var/log —
+        # containerd's CRI writes real log files there directly, no /var/lib/docker
+        # dependency (that path is dockershim-specific and unused with containerd).
+        - name: varlog
+          hostPath:
+            path: /var/log
