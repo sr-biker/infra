@@ -13,3 +13,11 @@ output "node_security_group_id" {
 output "worker_asg_name" {
   value = module.k8s_nodes.worker_asg_name
 }
+
+output "contacts_micro_service_ecr_repository_url" {
+  value = module.k8s_nodes.contacts_micro_service_ecr_repository_url
+}
+
+output "contacts_micro_service_ecr_repository_arn" {
+  value = module.k8s_nodes.contacts_micro_service_ecr_repository_arn
+}

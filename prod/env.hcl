@@ -13,6 +13,7 @@ locals {
     "alb"         = ["vpc", "k8s-nodes"]
     "api-gateway" = ["vpc", "alb"]
     "rds"         = []
+    "cicd"        = ["k8s-nodes"]
   }
 }
 

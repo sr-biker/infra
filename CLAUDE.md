@@ -112,6 +112,29 @@ per node instead of one per app replica.
   IMDS on `kind`) — expected, and confirms the config itself is correct. It is not left running in
   `local` (deleted after verification); this manifest is prod-only.
 
+### CI/CD (prod)
+
+`prod/cicd` provisions an AWS CodePipeline (`modules/cicd`) that builds `contacts-micro-service` and
+deploys it to the running prod cluster: **Source** (GitHub via CodeStar Connections) → **Build**
+(CodeBuild, `docker build`/push to the `contacts-micro-service` ECR repo created in
+`modules/k8s-nodes`) → **Deploy** (CodeBuild, `aws ssm send-command` into the control-plane instance
+running `kubectl set image deployment/contacts-micro-service ...` + `kubectl rollout status`).
+
+- **One-time manual step required**: the `aws_codestarconnections_connection` is created in `PENDING`
+  status — Terraform cannot complete a GitHub OAuth grant. Approve it once in the AWS Console
+  (CodePipeline → Settings → Connections) before the pipeline can pull source.
+- Both CodeBuild projects use `ARM_CONTAINER`/`amazonlinux2-aarch64-standard` — native arm64 builds
+  matching the Graviton (`t4g`) worker nodes, no cross-compilation.
+- The **deploy** stage assumes `deployment/contacts-micro-service` already exists in the cluster
+  (`kubectl set image` updates an existing Deployment, it doesn't create one) — the first-ever deploy
+  to `prod` still needs a manual `helm install` first; the pipeline handles updates after that.
+- Deploy stage's IAM (`aws_iam_role.deploy` in `modules/cicd`) is scoped to `ssm:SendCommand` on
+  exactly the control-plane instance ARN + the `AWS-RunShellScript` document ARN only — it cannot run
+  commands on any other instance or via any other SSM document.
+- Image tag = first 8 chars of the git commit SHA (`CODEBUILD_RESOLVED_SOURCE_VERSION`), plus a
+  floating `:latest`. Both Build and Deploy stages compute this independently from their own
+  `CODEBUILD_RESOLVED_SOURCE_VERSION` rather than passing it as a CodePipeline artifact/variable.
+
 ## State & Locking
 
 - Backend: S3, configured in root `terragrunt.hcl`, keyed per-module via `path_relative_to_include()`.

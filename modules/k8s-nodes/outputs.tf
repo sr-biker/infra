@@ -13,3 +13,11 @@ output "node_security_group_id" {
 output "worker_asg_name" {
   value = aws_autoscaling_group.worker.name
 }
+
+output "contacts_micro_service_ecr_repository_url" {
+  value = aws_ecr_repository.contacts_micro_service.repository_url
+}
+
+output "contacts_micro_service_ecr_repository_arn" {
+  value = aws_ecr_repository.contacts_micro_service.arn
+}
