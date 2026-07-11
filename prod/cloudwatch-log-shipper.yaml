@@ -15,17 +15,23 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: logging
+  labels:
+    environment: prod
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: cloudwatch-log-shipper
   namespace: logging
+  labels:
+    environment: prod
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: cloudwatch-log-shipper
+  labels:
+    environment: prod
 rules:
   - apiGroups: [""]
     resources: ["namespaces", "pods"]
@@ -35,6 +41,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: cloudwatch-log-shipper
+  labels:
+    environment: prod
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -49,6 +57,8 @@ kind: ConfigMap
 metadata:
   name: cloudwatch-log-shipper-config
   namespace: logging
+  labels:
+    environment: prod
 data:
   fluent-bit.conf: |
     [SERVICE]
@@ -101,6 +111,8 @@ kind: DaemonSet
 metadata:
   name: cloudwatch-log-shipper
   namespace: logging
+  labels:
+    environment: prod
 spec:
   selector:
     matchLabels:
@@ -109,6 +121,7 @@ spec:
     metadata:
       labels:
         app: cloudwatch-log-shipper
+        environment: prod
     spec:
       serviceAccountName: cloudwatch-log-shipper
       # Run on every node, including the control plane — its logs should ship too.
