@@ -32,6 +32,6 @@ variable "worker_count" {
 
 variable "kubernetes_version" {
   type        = string
-  default     = "1.30"
-  description = "Kubernetes minor version, e.g. 1.30"
+  default     = "1.36"
+  description = "Kubernetes minor version, e.g. 1.36"
 }
