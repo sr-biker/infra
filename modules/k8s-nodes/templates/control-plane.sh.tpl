@@ -64,6 +64,17 @@ cp -i /etc/kubernetes/admin.conf /root/.kube/config
 export KUBECONFIG=/root/.kube/config
 kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
 
+# --- helm + Secrets Store CSI driver (AWS provider) ---
+# Combined chart (the AWS provider chart bundles the driver as a sub-chart dependency) --
+# installing them as two separate helm releases fails with an ownership conflict on the
+# shared "secrets-store-csi-driver" ServiceAccount.
+curl -fsSL -o /tmp/get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+chmod +x /tmp/get_helm.sh
+/tmp/get_helm.sh
+helm repo add aws-secrets-manager https://aws.github.io/secrets-store-csi-driver-provider-aws
+helm repo update
+helm upgrade --install secrets-provider-aws aws-secrets-manager/secrets-store-csi-driver-provider-aws   --namespace kube-system   --set secrets-store-csi-driver.syncSecret.enabled=true
+
 # --- publish join command for workers via SSM Parameter Store ---
 # AL2023 ships aws-cli v2 and amazon-ssm-agent preinstalled/enabled — no package install
 # needed for either, unlike the prior Ubuntu-based script.

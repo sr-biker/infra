@@ -143,13 +143,51 @@ running `kubectl set image deployment/contacts-micro-service ...` + `kubectl rol
   matching the Graviton (`t4g`) worker nodes, no cross-compilation.
 - The **deploy** stage assumes `deployment/contacts-micro-service` already exists in the cluster
   (`kubectl set image` updates an existing Deployment, it doesn't create one) — the first-ever deploy
-  to `prod` still needs a manual `helm install` first; the pipeline handles updates after that.
+  to `prod` needed a manual `helm install` first (done; see the section below on what that actually
+  took), the pipeline handles updates after that.
 - Deploy stage's IAM (`aws_iam_role.deploy` in `modules/cicd`) is scoped to `ssm:SendCommand` on
   exactly the control-plane instance ARN + the `AWS-RunShellScript` document ARN only — it cannot run
   commands on any other instance or via any other SSM document.
 - Image tag = first 8 chars of the git commit SHA (`CODEBUILD_RESOLVED_SOURCE_VERSION`), plus a
   floating `:latest`. Both Build and Deploy stages compute this independently from their own
   `CODEBUILD_RESOLVED_SOURCE_VERSION` rather than passing it as a CodePipeline artifact/variable.
+
+### contacts-micro-service on prod: what the first real deploy actually needed
+
+The chart (`~/projects/contacts-micro-service/helm/contacts-micro-service`) makes two assumptions
+about the cluster that turned out **not** to hold, discovered by actually deploying rather than
+assumed up front — both fixed at the chart level, not by adding cluster infrastructure that doesn't
+fit a self-managed (non-EKS) cluster:
+
+- **No ECR credential provider on kubelet.** EKS-optimized AMIs ship `ecr-credential-provider`
+  preconfigured; AL2023 plain EC2 instances don't, and the binary isn't published anywhere for
+  standalone download (building it from source was judged not worth it here). Image pulls from ECR
+  fail with `no basic auth credentials` without it. Fixed with `imagePullSecrets`
+  (`image.pullSecretName`) referencing a `dockerconfigjson` Secret built from
+  `aws ecr get-login-password`, refreshed by an in-cluster CronJob (`ecrRefresh.enabled`, every 6h by
+  default) since ECR tokens expire after ~12h — not a one-time fix.
+- **No IRSA/EKS Pod Identity.** The official Secrets Store CSI driver's AWS provider **requires** one
+  of those two per its own docs; self-managed EC2 clusters are explicitly listed as unsupported. Fixed
+  with `dbSecretFetch.enabled`: the container's own entrypoint (`command:` override) calls
+  `aws secretsmanager get-secret-value` directly, using the node's instance-profile credentials (that
+  part isn't EKS-specific, only the CSI provider's IRSA requirement was) — no sidecar/init-container
+  either, since the main container's command needs modifying regardless (Kubernetes has no native
+  env-from-file mechanism), so splitting into two containers wouldn't have bought isolation. Requires
+  `modules/k8s-nodes`' `db_secret_read` IAM policy (scoped to exactly one secret name) and `aws-cli`/
+  `jq` baked into the app image.
+
+Both of the above are genuinely required for **any** app deployed to this cluster from a registry
+other than a pre-loaded local image, not just this one service — expect to hit both again for the
+next app unless a proper `ecr-credential-provider` install or IRSA-equivalent (manual OIDC federation)
+gets built into `modules/k8s-nodes` at the cluster level instead.
+
+Also needed once, and will be needed again for the next schema change: **`rds`'s database was
+genuinely empty** (first-ever deploy) and `application-prod.yml` deliberately sets
+`ddl-auto: validate` (prod never auto-migrates — see that file). Since there's no migration tool
+(Flyway/Liquibase) in this app yet, the initial `contact` table was created once, by hand, via `psql`
+from the control-plane instance (network path: same VPC/security group as the RDS instance). This
+isn't automated anywhere — add a migration tool before the schema needs to change again, rather than
+repeating the manual `psql` step.
 
 ## State & Locking
 
