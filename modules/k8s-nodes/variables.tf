@@ -35,3 +35,9 @@ variable "kubernetes_version" {
   default     = "1.36"
   description = "Kubernetes minor version, e.g. 1.36"
 }
+
+variable "db_secret_name" {
+  type        = string
+  default     = "/rds/postgres/credentials"
+  description = "Secrets Manager secret nodes are allowed to read via the Secrets Store CSI driver (AWS provider), scoped narrowly to this one name -- not secretsmanager:* on everything."
+}

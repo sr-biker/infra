@@ -83,6 +83,25 @@ resource "aws_iam_role_policy" "cloudwatch_logs" {
   })
 }
 
+resource "aws_iam_role_policy" "db_secret_read" {
+  name = "${var.name}-db-secret-read"
+  role = aws_iam_role.node.id
+
+  # Grants every pod on every node read access to this one secret via the Secrets Store
+  # CSI driver (AWS provider) -- no IRSA/pod-identity on kubeadm, so there's no finer
+  # granularity available than "the node role" here. Explicitly authorized (not a default
+  # this module should apply broadly) and scoped to exactly this secret name, not
+  # secretsmanager:* on everything.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "secretsmanager:GetSecretValue"
+      Resource = "arn:aws:secretsmanager:${data.aws_region.current.region}:*:secret:${var.db_secret_name}-*"
+    }]
+  })
+}
+
 resource "aws_ecr_repository" "contacts_micro_service" {
   name                 = "contacts-micro-service"
   image_tag_mutability = "MUTABLE"
