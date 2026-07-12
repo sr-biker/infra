@@ -3,26 +3,19 @@ variable "name" {
   default = "infra-prod-rds"
 }
 
-variable "vpc_cidr" {
-  type    = string
-  default = "10.1.0.0/16"
+variable "vpc_id" {
+  type        = string
+  description = "VPC to deploy RDS into -- the k8s stack's VPC, not a separate one. No VPC peering/cross-VPC routing needed this way."
 }
 
-variable "public_subnet_cidrs" {
-  type    = list(string)
-  default = ["10.1.0.0/24", "10.1.1.0/24"]
-}
-
-variable "private_subnet_cidrs" {
+variable "private_subnet_ids" {
   type        = list(string)
-  description = "Private-with-egress tier; unused (no NAT gateway is created, matching the source CDK stack's nat_gateways=0), kept for topology parity."
-  default     = ["10.1.10.0/24", "10.1.11.0/24"]
+  description = "Private subnets (within vpc_id) for the DB subnet group."
 }
 
-variable "isolated_subnet_cidrs" {
-  type        = list(string)
-  description = "Isolated tier the RDS instance actually runs in."
-  default     = ["10.1.20.0/28", "10.1.20.16/28"]
+variable "node_security_group_id" {
+  type        = string
+  description = "k8s node security group -- the only thing allowed to reach RDS on 5432."
 }
 
 variable "instance_class" {
@@ -48,12 +41,6 @@ variable "max_allocated_storage" {
 variable "database_name" {
   type    = string
   default = "appdb"
-}
-
-variable "master_username" {
-  type        = string
-  default     = "dbadmin"
-  description = "Must match the username stored in master_secret_name -- RDS is not told this separately from the secret, but the instance's own username attribute still needs a value."
 }
 
 variable "master_secret_name" {

@@ -1,7 +1,3 @@
-output "vpc_id" {
-  value = module.rds.vpc_id
-}
-
 output "db_instance_endpoint" {
   value = module.rds.db_instance_endpoint
 }

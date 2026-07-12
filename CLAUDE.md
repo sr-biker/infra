@@ -24,7 +24,7 @@ modules/
                               # join command handed off through SSM Parameter Store
   alb/                       # private ALB + target group (NodePort 30080) attached to the worker ASG
   api-gateway/                # HTTP API + VPC Link fronting the private ALB
-  rds/                       # standalone PostgreSQL RDS instance + its own VPC, ported from
+  rds/                       # PostgreSQL RDS instance in the k8s stack's own VPC, ported from
                               # ~/projects/cdk/stacks/rds_stack.py — see "rds module" below
 prod/                        # only real Terragrunt environment; env.hcl + one dir per module
   env.hcl                    # environment/aws_region/state_bucket only, used by root terragrunt.hcl
@@ -32,7 +32,7 @@ prod/                        # only real Terragrunt environment; env.hcl + one d
   k8s-nodes/                 # same shape; main.tf reads vpc's state via terraform_remote_state
   alb/                       # same shape; reads vpc + k8s-nodes state
   api-gateway/               # same shape; reads vpc + alb state
-  rds/                       # same shape but no terraform_remote_state deps — self-contained
+  rds/                       # same shape; reads vpc + k8s-nodes state (own VPC, node SG for ingress)
   cloudwatch-log-shipper.yaml # raw k8s manifest, not Terragrunt-managed — see "Log shipping" below
 local/                       # NOT Terragrunt-managed — local kind cluster, see local/README.md
   kind-config.yaml
@@ -74,13 +74,29 @@ not a bug.
 
 ### rds module
 
-`modules/rds` is a direct port of `~/projects/cdk/stacks/rds_stack.py` (a separate AWS CDK repo) —
-not wired into the k8s stack. It provisions **its own** VPC (`10.1.0.0/16` by default, disjoint from
-the k8s stack's `10.0.0.0/16`) with public/private/isolated subnet tiers, a single-AZ `db.t3.micro`
-PostgreSQL instance in the isolated tier, RDS-managed credentials in Secrets Manager
-(`manage_master_user_password`, replacing the CDK version's `Credentials.from_generated_secret`), and
-an EventBridge Scheduler stop/start pair (`aws_scheduler_schedule`, replacing the CDK version's
-`CfnSchedule`) that stops the DB nightly and starts it on weekday mornings.
+`modules/rds` is a direct port of `~/projects/cdk/stacks/rds_stack.py` (a separate AWS CDK repo).
+Originally ported with its own separate VPC (matching the source CDK stack, which had no k8s cluster
+to relate to); restructured to live in the k8s stack's own VPC instead, in the same private subnets as
+the worker nodes, once it became clear the isolation bought nothing here — just VPC peering/routing
+complexity for a DB that only ever needs to be reachable from this one cluster. `vpc_id`/
+`private_subnet_ids` come from `vpc`'s remote state, and the DB security group only allows `5432`
+from `k8s-nodes`' node security group (`terraform_remote_state`), the same pattern `alb` uses for the
+ALB → NodePort path.
+
+A single-AZ `db.t3.micro` PostgreSQL instance, credentials from an **existing** Secrets Manager secret
+(`master_secret_name`, default `/rds/postgres/credentials`) rather than RDS-managed
+(`manage_master_user_password`) — read via `data "aws_secretsmanager_secret_version"` and
+`jsondecode`'d into `username`/`password` (Terraform correctly propagates the sensitive taint through
+`jsondecode`, so the password never appears in plan/apply output). This secret was migrated from a
+now-decommissioned instance in a different region/account context; if that secret is ever rotated or
+recreated, the JSON shape must stay `{"username": "...", "password": "..."}`. Also an EventBridge
+Scheduler stop/start pair (`aws_scheduler_schedule`, replacing the CDK version's `CfnSchedule`) that
+stops the DB nightly and starts it on weekday mornings.
+
+Note: RDS does **not** support moving an existing instance's DB subnet group to a different VPC in
+place (`ModifyDBSubnetGroup` rejects it with `InvalidParameterValue`) — moving `rds` to a new VPC
+always means destroy-and-recreate (`-replace` on both `aws_db_subnet_group` and `aws_db_instance`),
+not an in-place migration, regardless of what a `plan` might suggest.
 
 This is a **cost-optimized, non-production** shape ported as-is from the source stack, not a
 production DB config:
