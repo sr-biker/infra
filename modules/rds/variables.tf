@@ -51,8 +51,15 @@ variable "database_name" {
 }
 
 variable "master_username" {
-  type    = string
-  default = "dbadmin"
+  type        = string
+  default     = "dbadmin"
+  description = "Must match the username stored in master_secret_name -- RDS is not told this separately from the secret, but the instance's own username attribute still needs a value."
+}
+
+variable "master_secret_name" {
+  type        = string
+  default     = "/rds/postgres/credentials"
+  description = "Existing Secrets Manager secret (username+password JSON) used as the master credential, instead of letting RDS generate/manage its own. Ported from the source CDK stack's secret of the same name/shape."
 }
 
 variable "monitoring_interval" {

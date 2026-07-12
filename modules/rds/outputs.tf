@@ -19,7 +19,7 @@ output "db_instance_address" {
 }
 
 output "master_user_secret_arn" {
-  value = aws_db_instance.postgres.master_user_secret[0].secret_arn
+  value = data.aws_secretsmanager_secret.master.arn
 }
 
 output "security_group_id" {

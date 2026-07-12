@@ -131,7 +131,23 @@ resource "aws_iam_role_policy_attachment" "monitoring" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
-# --- RDS PostgreSQL instance; credentials managed by RDS directly in Secrets Manager ---
+# --- master credentials: an existing Secrets Manager secret, not an RDS-managed one ---
+# Reuses the same credentials as the source CDK stack's (now-decommissioned) instance,
+# migrated from a us-east-2 secret of the same name -- not a fresh manage_master_user_password
+# generated secret.
+data "aws_secretsmanager_secret" "master" {
+  name = var.master_secret_name
+}
+
+data "aws_secretsmanager_secret_version" "master" {
+  secret_id = data.aws_secretsmanager_secret.master.id
+}
+
+locals {
+  master_credentials = jsondecode(data.aws_secretsmanager_secret_version.master.secret_string)
+}
+
+# --- RDS PostgreSQL instance ---
 resource "aws_db_instance" "postgres" {
   identifier     = "${var.name}-postgres"
   engine         = "postgres"
@@ -142,9 +158,9 @@ resource "aws_db_instance" "postgres" {
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.db.id]
 
-  db_name                     = var.database_name
-  username                    = var.master_username
-  manage_master_user_password = true
+  db_name  = var.database_name
+  username = local.master_credentials.username
+  password = local.master_credentials.password
 
   multi_az              = false
   allocated_storage     = var.allocated_storage
