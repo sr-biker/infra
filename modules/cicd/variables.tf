@@ -26,21 +26,3 @@ variable "ecr_repository_arn" {
   type = string
 }
 
-variable "control_plane_instance_id" {
-  type = string
-}
-
-variable "k8s_deployment_name" {
-  type    = string
-  default = "contacts-micro-service"
-}
-
-variable "k8s_container_name" {
-  type    = string
-  default = "app"
-}
-
-variable "k8s_namespace" {
-  type    = string
-  default = "default"
-}
