@@ -62,9 +62,32 @@ kubectl --context $KCTX -n senthil-apis rollout status deployment/membership
 curl http://localhost:8080/api/contacts
 curl http://localhost:8080/api/memberships
 
+# Keycloak -- chart lives in this repo (helm/keycloak), not an app repo, since it's
+# platform/cluster infra rather than an application with its own source. Dev mode,
+# in-memory H2 (see helm/keycloak/values.yaml) -- realm/client/user config comes back on
+# every restart via --import-realm, but any state you change by hand in the admin
+# console is gone on the next pod restart. Not exposed via ingress; reach it with
+# `kubectl --context $KCTX -n senthil-auth port-forward svc/keycloak 8081:8080` and
+# browse http://localhost:8081/admin (admin/admin).
+kubectl --context $KCTX create namespace senthil-auth
+helm upgrade --install keycloak ./helm/keycloak --namespace senthil-auth --kube-context $KCTX
+kubectl --context $KCTX -n senthil-auth rollout status deployment/keycloak
+
 # teardown
 kind delete cluster --name infra-local
 ```
+
+## Known issue: Keycloak direct-grant login fails
+
+Password-grant token requests against the `apps` realm currently fail with
+`{"error":"invalid_grant","error_description":"Account is not fully set up"}` for every
+user — reproduces identically on both `local` and prod, including a user created live via
+`kcadm` (bypassing the realm-import file entirely), which rules out anything specific to
+`realm-export.json`. Everything checked so far (user's `requiredActions`, the realm's
+registered required-action providers, the `direct grant` flow's binding and execution
+structure) matches a normal, working Keycloak setup — root cause not yet identified. Local
+now reproduces this in seconds instead of minutes of SSM round-trips against prod, so
+resume debugging here.
 
 There is no Terragrunt unit for `local` — nothing here is AWS-managed state, so it isn't part of the
 `live/` Terragrunt tree. `prod` is the only environment under Terragrunt.
