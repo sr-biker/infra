@@ -36,18 +36,28 @@ spec:
           volumeMounts:
             - name: realm-import
               mountPath: /opt/keycloak/data/import
+          # Dev-mode startup (Quarkus augmentation + DB schema init + realm import) can
+          # easily take 60-90s+ on a t4g.small node -- a tight livenessProbe.initialDelaySeconds
+          # killed the container mid-startup before it ever became ready (SIGTERM loop,
+          # never actually crash-looping on an error). startupProbe gates both
+          # readiness/liveness until the app is actually up, with a generous budget
+          # (30 x 10s = up to 300s) instead of guessing a fixed delay.
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health/ready
               port: 8080
-            initialDelaySeconds: 20
             periodSeconds: 10
             failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /health/live
               port: 8080
-            initialDelaySeconds: 30
             periodSeconds: 15
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
