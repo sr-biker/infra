@@ -163,7 +163,7 @@ resource "aws_codebuild_project" "build" {
 
 # --- pipeline ---
 resource "aws_codepipeline" "this" {
-  name     = "customer-api-pipeline"
+  name     = var.pipeline_name
   role_arn = aws_iam_role.pipeline.arn
 
   artifact_store {

@@ -3,6 +3,13 @@ variable "name" {
   default = "infra-prod"
 }
 
+# CodePipeline names are a flat namespace (not scoped by var.name the way every other
+# resource in this module is) -- explicit per-instance so two invocations of this module
+# (one per app) don't collide trying to create the same pipeline name.
+variable "pipeline_name" {
+  type = string
+}
+
 variable "github_owner" {
   type    = string
   default = "sr-biker"

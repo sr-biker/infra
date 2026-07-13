@@ -21,3 +21,11 @@ output "contacts_micro_service_ecr_repository_url" {
 output "contacts_micro_service_ecr_repository_arn" {
   value = module.k8s_nodes.contacts_micro_service_ecr_repository_arn
 }
+
+output "membership_ecr_repository_url" {
+  value = module.k8s_nodes.membership_ecr_repository_url
+}
+
+output "membership_ecr_repository_arn" {
+  value = module.k8s_nodes.membership_ecr_repository_arn
+}
