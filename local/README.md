@@ -16,6 +16,10 @@ kubectl cluster-info --context kind-infra-local
 # `kubectl config current-context` happens to be — it can drift out from under you.
 KCTX=kind-infra-local
 
+# App workloads go in their own namespace, not "default" -- matches prod (see infra's
+# CLAUDE.md/README for prod's namespace layout).
+kubectl --context $KCTX create namespace senthil-apis
+
 # ingress-nginx, bound to NodePort 30080 — mirrors modules/alb's ingress_node_port, which
 # is what a real prod ALB target group forwards to. This is what makes `curl localhost:8080`
 # (kind-config.yaml's hostPort mapping) exercise the same path prod's ALB would: NodePort ->
@@ -29,24 +33,34 @@ helm install ingress-nginx ingress-nginx/ingress-nginx --kube-context $KCTX \
   --set controller.watchIngressWithoutClass=true
 kubectl --context $KCTX -n ingress-nginx rollout status deployment/ingress-nginx-controller
 
-# Postgres — required by contacts-micro-service's values-local.yaml (db.host: postgres)
-kubectl --context $KCTX apply -f postgres.yaml
-kubectl --context $KCTX rollout status deployment/postgres
+# Postgres — required by contacts-micro-service's values-local.yaml (db.host: postgres),
+# and by membership's (same host, both apps share it locally the same way they share the
+# real RDS instance in prod, just as separate databases).
+kubectl --context $KCTX -n senthil-apis apply -f postgres.yaml
+kubectl --context $KCTX -n senthil-apis rollout status deployment/postgres
 
-# build the app image and load it into kind's nodes (kind can't pull from a local docker
-# daemon on its own — images must be built + loaded explicitly)
+# build the app images and load them into kind's nodes (kind can't pull from a local
+# docker daemon on its own — images must be built + loaded explicitly)
 docker build -t contacts-micro-service-app:latest ~/projects/contacts-micro-service
 kind load docker-image contacts-micro-service-app:latest --name infra-local
+docker build -t membership-app:latest ~/projects/membership
+kind load docker-image membership-app:latest --name infra-local
 
-# install workloads — chart lives in the app's own repo, not here
+# install workloads — charts live in each app's own repo, not here
 # (values-local.yaml sets ingress.enabled: true)
 helm upgrade --install contacts ~/projects/contacts-micro-service/helm/contacts-micro-service \
   -f ~/projects/contacts-micro-service/helm/contacts-micro-service/values-local.yaml \
-  --kube-context $KCTX
-kubectl --context $KCTX rollout status deployment/contacts-micro-service
+  --namespace senthil-apis --kube-context $KCTX
+kubectl --context $KCTX -n senthil-apis rollout status deployment/contacts-micro-service
+
+helm upgrade --install membership ~/projects/membership/helm/membership \
+  -f ~/projects/membership/helm/membership/values-local.yaml \
+  --namespace senthil-apis --kube-context $KCTX
+kubectl --context $KCTX -n senthil-apis rollout status deployment/membership
 
 # reachable the same way a real ALB would reach it in prod:
 curl http://localhost:8080/api/contacts
+curl http://localhost:8080/api/memberships
 
 # teardown
 kind delete cluster --name infra-local

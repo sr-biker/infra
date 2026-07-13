@@ -11,6 +11,21 @@ spec:
     requests:
       storage: 1Gi
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels:
+    environment: local
+data:
+  # Only runs on first initdb (empty PGDATA) -- the postgres image scans
+  # /docker-entrypoint-initdb.d/*.sql once, at cluster creation, not on every restart.
+  # Mirrors prod: one shared instance, one database per app (membership was created the
+  # same way against the real RDS instance, just via psql over SSM instead of this).
+  membership-db.sql: |
+    CREATE USER membership WITH PASSWORD 'membership';
+    CREATE DATABASE membership OWNER membership;
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,6 +66,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "contacts", "-d", "contacts"]
@@ -60,6 +77,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: postgres-data
+        - name: init
+          configMap:
+            name: postgres-init
 ---
 apiVersion: v1
 kind: Service
