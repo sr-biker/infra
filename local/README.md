@@ -77,17 +77,5 @@ kubectl --context $KCTX -n senthil-auth rollout status deployment/keycloak
 kind delete cluster --name infra-local
 ```
 
-## Known issue: Keycloak direct-grant login fails
-
-Password-grant token requests against the `apps` realm currently fail with
-`{"error":"invalid_grant","error_description":"Account is not fully set up"}` for every
-user — reproduces identically on both `local` and prod, including a user created live via
-`kcadm` (bypassing the realm-import file entirely), which rules out anything specific to
-`realm-export.json`. Everything checked so far (user's `requiredActions`, the realm's
-registered required-action providers, the `direct grant` flow's binding and execution
-structure) matches a normal, working Keycloak setup — root cause not yet identified. Local
-now reproduces this in seconds instead of minutes of SSM round-trips against prod, so
-resume debugging here.
-
 There is no Terragrunt unit for `local` — nothing here is AWS-managed state, so it isn't part of the
 `live/` Terragrunt tree. `prod` is the only environment under Terragrunt.

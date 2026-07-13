@@ -27,8 +27,8 @@
     { "alias": "VERIFY_EMAIL", "name": "Verify Email", "providerId": "VERIFY_EMAIL", "enabled": true, "defaultAction": false, "priority": 50 },
     { "alias": "VERIFY_PROFILE", "name": "Verify Profile", "providerId": "VERIFY_PROFILE", "enabled": true, "defaultAction": false, "priority": 90 },
     { "alias": "delete_account", "name": "Delete Account", "providerId": "delete_account", "enabled": false, "defaultAction": false, "priority": 60 },
-    { "alias": "webauthn_register", "name": "Webauthn Register", "providerId": "webauthn_register", "enabled": true, "defaultAction": false, "priority": 70 },
-    { "alias": "webauthn_register_passwordless", "name": "Webauthn Register Passwordless", "providerId": "webauthn_register_passwordless", "enabled": true, "defaultAction": false, "priority": 80 },
+    { "alias": "webauthn_register", "name": "Webauthn Register", "providerId": "webauthn_register", "enabled": false, "defaultAction": false, "priority": 70 },
+    { "alias": "webauthn_register_passwordless", "name": "Webauthn Register Passwordless", "providerId": "webauthn_register_passwordless", "enabled": false, "defaultAction": false, "priority": 80 },
     { "alias": "update_user_locale", "name": "Update User Locale", "providerId": "update_user_locale", "enabled": true, "defaultAction": false, "priority": 1000 },
     { "alias": "CONFIGURE_RECOVERY_AUTHN_CODES", "name": "Recovery Authentication Codes", "providerId": "CONFIGURE_RECOVERY_AUTHN_CODES", "enabled": true, "defaultAction": false, "priority": 100 },
     { "alias": "idp_link", "name": "Linking Identity Provider", "providerId": "idp_link", "enabled": true, "defaultAction": false, "priority": 110 }
@@ -37,7 +37,10 @@
     {
       "username": "testuser",
       "enabled": true,
+      "email": "testuser@example.com",
       "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
       "requiredActions": [],
       "credentials": [
         {
