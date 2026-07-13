@@ -18,6 +18,7 @@
       "username": "testuser",
       "enabled": true,
       "emailVerified": true,
+      "requiredActions": [],
       "credentials": [
         {
           "type": "password",
