@@ -2,6 +2,12 @@
   "realm": "apps",
   "enabled": true,
   "sslRequired": "none",
+  "browserFlow": "browser",
+  "registrationFlow": "registration",
+  "directGrantFlow": "direct grant",
+  "resetCredentialsFlow": "reset credentials",
+  "clientAuthenticationFlow": "clients",
+  "dockerAuthenticationFlow": "docker auth",
   "clients": [
     {
       "clientId": "apps-client",
