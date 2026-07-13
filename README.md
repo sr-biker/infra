@@ -18,9 +18,17 @@ the whole system fits together — see `CLAUDE.md` for the detailed layout/modul
   `CLAUDE.md`): the GitOps controller that actually deploys workloads. Terragrunt/OpenTofu has no
   network path to the private cluster API server, so nothing past "the cluster exists" is provisioned
   from here — see "Why apps aren't deployed from this repo" below.
-- **CI**: `prod/cicd` builds `contacts-micro-service` and publishes to ECR (see `modules/cicd`); the
-  actual deploy step is superseded by Argo CD's auto-sync (see that section's CLAUDE.md notes on
-  what's still live vs. redundant).
+- **Keycloak** (`helm/keycloak`, deployed via Argo CD like the apps below — this is the one exception
+  to "app charts live in the app's own repo," since it's platform/cluster infra, not an application
+  with its own source): dev-mode, in-memory H2, realm/client/user config re-imported from a
+  checked-in `realm-export.json` on every restart. Issues the JWTs `contacts-micro-service`/
+  `membership` validate for their write endpoints — see those repos' READMEs.
+- **CI**: `prod/cicd` provisions one CodePipeline per app (`customer-api-pipeline` for
+  `contacts-micro-service`, `membership-pipeline` for `membership`; see `modules/cicd`) — each just
+  `Source` → `Build` (docker build + push to that app's ECR repo). No Deploy stage: Argo CD's
+  `selfHeal` would just revert a `kubectl set image` step the moment it ran, since git
+  (`values-prod.yaml`'s `image.tag`) is the actual desired-state source of truth. "Deploy" here means
+  bumping that file and pushing, same as this repo's own tag-bump commits.
 
 ## What this repo does NOT own
 
@@ -33,7 +41,12 @@ Application source, Dockerfiles, and Helm charts live in each app's own repo, no
 
 Both apps share one namespace (`senthil-apis`), not `default` — namespaces here are purely a logical/
 naming/RBAC boundary, not a network or scheduling isolation one (see "Adding a new app" below for the
-resource-naming pitfall that sharing a namespace across two Helm releases can cause).
+resource-naming pitfall that sharing a namespace across two Helm releases can cause). Keycloak lives in
+its own namespace, `senthil-auth`, deployed via this repo's own `helm/keycloak` chart.
+
+Both apps protect their write endpoints (`POST`/`PUT`/`DELETE`) with JWTs issued by Keycloak — `GET`
+and `/actuator/**` stay open. See each app repo's README for how that's wired (Spring Security OAuth2
+resource server, off by default in local `docker-compose`, on in `kind`/prod).
 
 Each app repo's Helm chart is rendered **directly** by Argo CD (`spec.source.helm.valueFiles` pointing
 at that repo's `values-prod.yaml`) — there is no intermediate "rendered manifests" repo. (An earlier
