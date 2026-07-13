@@ -128,12 +128,38 @@ resource "aws_ecr_lifecycle_policy" "contacts_micro_service" {
   })
 }
 
+resource "aws_ecr_repository" "membership" {
+  name                 = "membership"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "membership" {
+  repository = aws_ecr_repository.membership.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last 10 images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 10
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
 resource "aws_iam_role_policy" "ecr_pull" {
   name = "${var.name}-ecr-pull"
   role = aws_iam_role.node.id
 
   # ecr:GetAuthorizationToken doesn't support resource-level scoping (must be "*"); the
-  # actual pull actions are scoped to just this one repo. Not yet used by an actual image
+  # actual pull actions are scoped to just these repos. Not yet used by an actual image
   # pull path on the nodes (that needs the ecr-credential-provider kubelet plugin
   # configured at bootstrap, not done here) — images are currently pulled via a
   # short-lived imagePullSecrets Secret instead. Kept for when that's wired in.
@@ -152,7 +178,10 @@ resource "aws_iam_role_policy" "ecr_pull" {
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
         ]
-        Resource = aws_ecr_repository.contacts_micro_service.arn
+        Resource = [
+          aws_ecr_repository.contacts_micro_service.arn,
+          aws_ecr_repository.membership.arn,
+        ]
       },
     ]
   })

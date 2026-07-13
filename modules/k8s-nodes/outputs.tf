@@ -21,3 +21,11 @@ output "contacts_micro_service_ecr_repository_url" {
 output "contacts_micro_service_ecr_repository_arn" {
   value = aws_ecr_repository.contacts_micro_service.arn
 }
+
+output "membership_ecr_repository_url" {
+  value = aws_ecr_repository.membership.repository_url
+}
+
+output "membership_ecr_repository_arn" {
+  value = aws_ecr_repository.membership.arn
+}
