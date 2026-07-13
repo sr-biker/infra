@@ -26,10 +26,14 @@ the whole system fits together — see `CLAUDE.md` for the detailed layout/modul
 
 Application source, Dockerfiles, and Helm charts live in each app's own repo, not here:
 
-| App repo | What it is | Deployed as |
-|---|---|---|
-| [`contacts-micro-service`](https://github.com/sr-biker/-contacts-micro-service) | Spring Boot + Postgres contacts REST service | Argo CD `Application` `contacts-micro-service`, path `/` on the shared ingress |
-| [`membership`](https://github.com/sr-biker/membership-ms) | Spring Boot + Postgres membership (classes: yoga/pilates/strength; schedules: daily/weekly) REST service | Argo CD `Application` `membership`, path `/api/memberships` on the shared ingress |
+| App repo | What it is | Namespace | Deployed as |
+|---|---|---|---|
+| [`contacts-micro-service`](https://github.com/sr-biker/-contacts-micro-service) | Spring Boot + Postgres contacts REST service | `senthil-apis` | Argo CD `Application` `contacts-micro-service`, path `/` on the shared ingress |
+| [`membership`](https://github.com/sr-biker/membership-ms) | Spring Boot + Postgres membership (classes: yoga/pilates/strength; schedules: daily/weekly) REST service | `senthil-apis` | Argo CD `Application` `membership`, path `/api/memberships` on the shared ingress |
+
+Both apps share one namespace (`senthil-apis`), not `default` — namespaces here are purely a logical/
+naming/RBAC boundary, not a network or scheduling isolation one (see "Adding a new app" below for the
+resource-naming pitfall that sharing a namespace across two Helm releases can cause).
 
 Each app repo's Helm chart is rendered **directly** by Argo CD (`spec.source.helm.valueFiles` pointing
 at that repo's `values-prod.yaml`) — there is no intermediate "rendered manifests" repo. (An earlier
@@ -57,13 +61,18 @@ reach into the cluster to deploy workloads directly.
    credentials.
 3. Build + push its image to the new ECR repo (arm64 — matches the Graviton nodes).
 4. Add an Argo CD `Application` (via SSM, `kubectl apply`) pointing at the app repo's Helm chart, with
-   a distinct `ingress.path` so it doesn't collide with `/` (owned by `contacts-micro-service`).
+   `destination.namespace: senthil-apis` and a distinct `ingress.path` so it doesn't collide with `/`
+   (owned by `contacts-micro-service`).
 
 See `CLAUDE.md` for the detailed rationale behind each of these steps (ECR credential provider gap,
-no IRSA, RDS-in-same-VPC, etc.) and known pitfalls (e.g. Helm `releaseName` must be pinned explicitly
-in the `Application`, or Argo CD's default-to-Application-name release name will produce
+no IRSA, RDS-in-same-VPC, etc.) and known pitfalls: Helm `releaseName` must be pinned explicitly in the
+`Application`, or Argo CD's default-to-Application-name release name will produce
 `app.kubernetes.io/instance` labels that don't match what a manual `helm template` test used, causing
-a perpetual `OutOfSync`).
+a perpetual `OutOfSync`; and since every app's chart shares the `senthil-apis` namespace, any
+chart-internal resource name that isn't prefixed with the app's own name (e.g. a bare
+`ecr-registry-refresh` CronJob/ServiceAccount/Role/RoleBinding, not `<app>-ecr-registry-refresh`) will
+collide with another app's identically-named resource — Argo CD will fight the two `Application`s over
+ownership of the same object instead of erroring loudly.
 
 ## Environments
 
