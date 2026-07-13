@@ -33,6 +33,13 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            # Keycloak 26.x serves /health/* on a separate management interface, not the
+            # app port -- probes hitting :8080/health/* 404 even though the app itself
+            # started fine (confirmed via logs: "Keycloak ... started in 40.628s.
+            # Listening on: http://0.0.0.0:8080. Management interface listening on
+            # http://0.0.0.0:9000").
+            - name: management
+              containerPort: 9000
           volumeMounts:
             - name: realm-import
               mountPath: /opt/keycloak/data/import
@@ -45,19 +52,19 @@ spec:
           startupProbe:
             httpGet:
               path: /health/started
-              port: 8080
+              port: management
             periodSeconds: 10
             failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health/ready
-              port: 8080
+              port: management
             periodSeconds: 10
             failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /health/live
-              port: 8080
+              port: management
             periodSeconds: 15
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
