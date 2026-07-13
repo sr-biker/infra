@@ -30,6 +30,16 @@ spec:
               value: {{ .Values.admin.password | quote }}
             - name: KC_HEALTH_ENABLED
               value: "true"
+            # Without a fixed hostname, Keycloak's dev-mode default (relative issuer) makes
+            # every token's "iss" claim match whatever Host header the client used to reach
+            # it -- e.g. a token requested via the short "keycloak:8080" name (from within
+            # this same namespace) gets a different "iss" than one requested via the FQDN.
+            # Resource-server apps validate "iss" against one fixed issuer-uri, so this
+            # broke JWT validation for tokens obtained any way other than the exact FQDN.
+            # Fixing the hostname makes the issuer consistent no matter how a client reaches
+            # this service.
+            - name: KC_HOSTNAME
+              value: "{{ include "keycloak.name" . }}.{{ .Release.Namespace }}.svc.cluster.local"
           ports:
             - name: http
               containerPort: 8080
