@@ -33,7 +33,8 @@ Application source, Dockerfiles, and Helm charts live in each app's own repo, no
 
 Each app repo's Helm chart is rendered **directly** by Argo CD (`spec.source.helm.valueFiles` pointing
 at that repo's `values-prod.yaml`) — there is no intermediate "rendered manifests" repo. (An earlier
-`contacts-ms-manifests` repo did that job; it's no longer used — see its own README.)
+`contacts-ms-manifests` repo did that job via pre-rendered, committed YAML; it was retired once Argo CD
+switched to rendering Helm directly, and has since been deleted.)
 
 ## Why apps aren't deployed from this repo
 
