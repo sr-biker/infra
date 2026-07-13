@@ -1,0 +1,32 @@
+image:
+  repository: quay.io/keycloak/keycloak
+  tag: "26.3"
+  pullPolicy: IfNotPresent
+
+# Dev mode -- embedded H2, in-memory (see chart README/CLAUDE.md for what this trades
+# away: no persistence across restarts, replicas must stay at 1). "start-dev" is the
+# Keycloak container's dev-mode entrypoint command.
+replicaCount: 1
+
+admin:
+  username: admin
+  # Dev-only instance, no external users beyond the imported realm's testuser -- a
+  # hardcoded default is acceptable here (not exposed outside the cluster network).
+  password: admin
+
+environment: local
+
+# Not exposed via the shared ingress -- apps reach Keycloak over the cluster-internal
+# Service DNS only (see contacts-micro-service/membership's issuer-uri). Token requests
+# for testing go through the same internal path (kubectl exec / SSM), not from outside
+# the cluster.
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

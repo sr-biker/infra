@@ -1,0 +1,6 @@
+apiVersion: v2
+name: keycloak
+description: Keycloak (dev mode, in-memory H2, realm imported from a checked-in export) securing write endpoints on contacts-micro-service and membership
+type: application
+version: 0.1.0
+appVersion: "26.3"
