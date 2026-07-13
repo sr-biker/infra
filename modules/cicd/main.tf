@@ -163,7 +163,7 @@ resource "aws_codebuild_project" "build" {
 
 # --- pipeline ---
 resource "aws_codepipeline" "this" {
-  name     = "${var.name}-contacts-micro-service"
+  name     = "customer-api-pipeline"
   role_arn = aws_iam_role.pipeline.arn
 
   artifact_store {
