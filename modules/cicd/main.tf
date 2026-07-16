@@ -24,6 +24,12 @@ resource "aws_codestarconnections_connection" "github" {
   provider_type = "GitHub"
 }
 
+# Existing secret holding a GitHub PAT used by the Build stage to push the image-tag bump
+# commit -- see variables.tf for the "not Terraform-managed" note.
+data "aws_secretsmanager_secret" "github_token" {
+  name = var.github_token_secret_name
+}
+
 # --- IAM: CodePipeline ---
 resource "aws_iam_role" "pipeline" {
   name = "${var.name}-cicd-pipeline"
@@ -113,6 +119,11 @@ resource "aws_iam_role_policy" "build" {
         ]
         Resource = var.ecr_repository_arn
       },
+      {
+        Effect   = "Allow"
+        Action   = "secretsmanager:GetSecretValue"
+        Resource = data.aws_secretsmanager_secret.github_token.arn
+      },
     ]
   })
 }
@@ -138,6 +149,34 @@ resource "aws_codebuild_project" "build" {
       name  = "REPO_URI"
       value = var.ecr_repository_url
     }
+
+    environment_variable {
+      name  = "VALUES_FILE"
+      value = var.values_file_path
+    }
+
+    environment_variable {
+      name  = "GH_OWNER"
+      value = var.github_owner
+    }
+
+    environment_variable {
+      name  = "GH_REPO"
+      value = var.github_repo
+    }
+
+    environment_variable {
+      name  = "GH_BRANCH"
+      value = var.github_branch
+    }
+
+    # SECRETS_MANAGER type: CodeBuild injects the secret's plaintext value at build time,
+    # never written to the buildspec or logs.
+    environment_variable {
+      name  = "GITHUB_TOKEN"
+      value = data.aws_secretsmanager_secret.github_token.name
+      type  = "SECRETS_MANAGER"
+    }
   }
 
   source {
@@ -157,14 +196,29 @@ resource "aws_codebuild_project" "build" {
           commands:
             - docker push $REPO_URI:$IMAGE_TAG
             - docker push $REPO_URI:latest
+            # Bump the Helm chart's values-prod.yaml with the new tag and push -- this is
+            # the actual "deploy trigger": Argo CD (selfHeal, watching this repo/branch)
+            # picks up the change and rolls it out, no kubectl/Deploy stage needed here.
+            # Cloned fresh (rather than reusing CODEBUILD_SRC_DIR) because the
+            # CodeStarSourceConnection source action hands CodeBuild a plain file export,
+            # not a git checkout with .git metadata to commit against.
+            - rm -rf /tmp/gitops-repo
+            - git clone --depth 1 --branch $GH_BRANCH https://x-access-token:$GITHUB_TOKEN@github.com/$GH_OWNER/$GH_REPO.git /tmp/gitops-repo
+            - cd /tmp/gitops-repo
+            - sed -i "s|^\(\s*tag:\s*\).*|\1$IMAGE_TAG|" $VALUES_FILE
+            - git config user.name "cicd-bot"
+            - git config user.email "cicd-bot@infra.local"
+            - git commit -am "Bump prod image tag to $IMAGE_TAG (automated)" || echo "no changes to commit"
+            - git push origin HEAD:$GH_BRANCH
     YAML
   }
 }
 
 # --- pipeline ---
 resource "aws_codepipeline" "this" {
-  name     = var.pipeline_name
-  role_arn = aws_iam_role.pipeline.arn
+  name          = var.pipeline_name
+  role_arn      = aws_iam_role.pipeline.arn
+  pipeline_type = "V2" # required for the trigger/git_configuration path filter below
 
   artifact_store {
     type     = "S3"
@@ -204,6 +258,27 @@ resource "aws_codepipeline" "this" {
 
       configuration = {
         ProjectName = aws_codebuild_project.build.name
+      }
+    }
+  }
+
+  # Without this, the Build stage's own image-tag-bump commit (above) would push to the
+  # same branch the Source stage watches, retriggering the pipeline forever. Excluding
+  # pushes that only touch values_file_path breaks that loop at the trigger level, rather
+  # than relying on a "[skip ci]"-style convention CodeStarSourceConnection doesn't support.
+  trigger {
+    provider_type = "CodeStarSourceConnection"
+
+    git_configuration {
+      source_action_name = "Source"
+
+      push {
+        branches {
+          includes = [var.github_branch]
+        }
+        file_paths {
+          excludes = [var.values_file_path]
+        }
       }
     }
   }
