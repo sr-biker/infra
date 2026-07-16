@@ -171,10 +171,12 @@ resource "aws_codebuild_project" "build" {
     }
 
     # SECRETS_MANAGER type: CodeBuild injects the secret's plaintext value at build time,
-    # never written to the buildspec or logs.
+    # never written to the buildspec or logs. The secret was created as a JSON key/value
+    # pair (key == the secret's own name) rather than a plain string, so the json-key
+    # suffix is required -- otherwise CodeBuild injects the whole JSON blob verbatim.
     environment_variable {
       name  = "GITHUB_TOKEN"
-      value = data.aws_secretsmanager_secret.github_token.name
+      value = "${data.aws_secretsmanager_secret.github_token.name}:${var.github_token_secret_name}"
       type  = "SECRETS_MANAGER"
     }
   }
