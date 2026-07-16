@@ -3,11 +3,11 @@ output "pipeline_name" {
 }
 
 output "github_connection_arn" {
-  value = aws_codestarconnections_connection.github.arn
+  value = local.codestar_connection_arn
 }
 
 output "github_connection_status" {
-  value = aws_codestarconnections_connection.github.connection_status
+  value = try(aws_codestarconnections_connection.github[0].connection_status, "REUSED")
 }
 
 output "artifact_bucket" {

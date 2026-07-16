@@ -18,6 +18,11 @@ module "cicd_membership" {
   github_repo      = "membership-ms"
   values_file_path = "helm/membership/values-prod.yaml"
 
+  # Reuse the connection created for contacts-micro-service -- one CodeStarConnections
+  # connection authorizes the whole sr-biker GitHub account, so a second per-app connection
+  # (and its manual console approval) isn't needed.
+  codestar_connection_arn = module.cicd.github_connection_arn
+
   ecr_repository_url = data.terraform_remote_state.k8s_nodes.outputs.membership_ecr_repository_url
   ecr_repository_arn = data.terraform_remote_state.k8s_nodes.outputs.membership_ecr_repository_arn
 }

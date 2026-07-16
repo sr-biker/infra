@@ -25,6 +25,15 @@ variable "github_branch" {
   default = "main"
 }
 
+# ARN of an existing aws_codestarconnections_connection (GitHub-authorized) to reuse instead
+# of creating a new one -- one connection authorizes the whole GitHub account/org, not a
+# single repo, so a second pipeline in the same account doesn't need its own manual
+# console approval. Leave null (default) to create a fresh connection for this instance.
+variable "codestar_connection_arn" {
+  type    = string
+  default = null
+}
+
 variable "ecr_repository_url" {
   type = string
 }

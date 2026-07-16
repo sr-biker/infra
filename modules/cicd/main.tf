@@ -19,9 +19,20 @@ resource "aws_s3_bucket_public_access_block" "artifacts" {
 # Created in PENDING status — must be approved once, manually, in the AWS Console
 # (CodePipeline > Settings > Connections) before the pipeline can pull source. Terraform
 # cannot complete a GitHub OAuth grant on your behalf.
+#
+# One CodeStarConnections connection authorizes an AWS account against a GitHub account/org
+# (not a single repo), so every pipeline instance in this account can reuse the same
+# connection instead of each needing its own manual approval -- pass an existing
+# connection's ARN via codestar_connection_arn to reuse it; leave unset to create a new one.
 resource "aws_codestarconnections_connection" "github" {
+  count = var.codestar_connection_arn == null ? 1 : 0
+
   name          = "${var.name}-github"
   provider_type = "GitHub"
+}
+
+locals {
+  codestar_connection_arn = coalesce(var.codestar_connection_arn, try(aws_codestarconnections_connection.github[0].arn, null))
 }
 
 # Existing secret holding a GitHub PAT used by the Build stage to push the image-tag bump
@@ -59,7 +70,7 @@ resource "aws_iam_role_policy" "pipeline" {
       {
         Effect   = "Allow"
         Action   = "codestar-connections:UseConnection"
-        Resource = aws_codestarconnections_connection.github.arn
+        Resource = local.codestar_connection_arn
       },
       {
         Effect   = "Allow"
@@ -239,7 +250,7 @@ resource "aws_codepipeline" "this" {
       output_artifacts = ["SourceOutput"]
 
       configuration = {
-        ConnectionArn    = aws_codestarconnections_connection.github.arn
+        ConnectionArn    = local.codestar_connection_arn
         FullRepositoryId = "${var.github_owner}/${var.github_repo}"
         BranchName       = var.github_branch
       }
