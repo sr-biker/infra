@@ -130,27 +130,45 @@ per node instead of one per app replica.
 
 ### CI/CD (prod)
 
-`prod/cicd` provisions an AWS CodePipeline (`modules/cicd`) that builds `contacts-micro-service` and
-deploys it to the running prod cluster: **Source** (GitHub via CodeStar Connections) → **Build**
-(CodeBuild, `docker build`/push to the `contacts-micro-service` ECR repo created in
-`modules/k8s-nodes`) → **Deploy** (CodeBuild, `aws ssm send-command` into the control-plane instance
-running `kubectl set image deployment/contacts-micro-service ...` + `kubectl rollout status`).
+`prod/cicd` provisions two AWS CodePipelines (`modules/cicd`, one instance per app):
+`customer-api-pipeline` for `contacts-micro-service`, `membership-pipeline` for `membership`. Each is
+**Source** (GitHub via CodeStar Connections) → **Build** only — no Deploy stage; Argo CD owns
+deployment (see README's "Why apps aren't deployed from this repo"). Build now does two things:
+
+1. `docker build`/push to that app's ECR repo (created in `modules/k8s-nodes`).
+2. The GitOps handoff: clone the app repo with a GitHub PAT, bump `values-prod.yaml`'s `image.tag` to
+   the new build, commit, and push. This is the actual "deploy trigger" — Argo CD's `selfHeal`
+   (watching that file in git) picks up the change and rolls it out. This replaced what used to be a
+   manual tag-bump-and-push step (still visible in git history as this repo's and each app repo's own
+   "Bump prod image tag to ..." commits from before this was automated).
 
 - **One-time manual step required**: the `aws_codestarconnections_connection` is created in `PENDING`
   status — Terraform cannot complete a GitHub OAuth grant. Approve it once in the AWS Console
-  (CodePipeline → Settings → Connections) before the pipeline can pull source.
+  (CodePipeline → Settings → Connections) before the pipeline can pull source. Only needed once, not
+  once per app — see "shared connection" below.
+- **Shared CodeStarConnections connection**: a connection authorizes the whole `sr-biker` GitHub
+  account, not a single repo, so `membership`'s module invocation passes
+  `codestar_connection_arn = module.cicd.github_connection_arn` (the connection created by the
+  `contacts-micro-service` instance) instead of creating — and needing separate manual approval
+  for — its own. `modules/cicd`'s `aws_codestarconnections_connection` resource has
+  `count = var.codestar_connection_arn == null ? 1 : 0` to support this.
+- **GitOps commit step's GitHub PAT**: `github_token_secret_name` (default `/cicd/github/token`)
+  names an *existing* Secrets Manager secret, not Terraform-managed — same pattern as `rds`'s
+  `master_secret_name`. Must have `repo` write scope on both app repos. Create it by hand before
+  applying. It happened to be created as a JSON key/value pair (key == the secret's own name) rather
+  than a plain string; the CodeBuild `SECRETS_MANAGER`-type env var reference therefore includes a
+  `:jsonkey` suffix (`"${secret_name}:${var.github_token_secret_name}"`) — if the secret is ever
+  recreated as a plain string instead, that suffix would need to come out.
+- **Loop prevention**: the GitOps commit step pushes to the same branch the Source stage watches, so
+  without a guard it would retrigger itself forever (new commit → new build → new tag → new commit →
+  ...). Both pipelines are `pipeline_type = V2` with a `trigger.git_configuration` push filter
+  (`file_paths.excludes = [var.values_file_path]`) — CodeStarSourceConnection has no "[skip ci]"
+  convention, so this filter is the actual mechanism, not just a nice-to-have.
 - Both CodeBuild projects use `ARM_CONTAINER`/`amazonlinux2-aarch64-standard` — native arm64 builds
   matching the Graviton (`t4g`) worker nodes, no cross-compilation.
-- The **deploy** stage assumes `deployment/contacts-micro-service` already exists in the cluster
-  (`kubectl set image` updates an existing Deployment, it doesn't create one) — the first-ever deploy
-  to `prod` needed a manual `helm install` first (done; see the section below on what that actually
-  took), the pipeline handles updates after that.
-- Deploy stage's IAM (`aws_iam_role.deploy` in `modules/cicd`) is scoped to `ssm:SendCommand` on
-  exactly the control-plane instance ARN + the `AWS-RunShellScript` document ARN only — it cannot run
-  commands on any other instance or via any other SSM document.
-- Image tag = first 8 chars of the git commit SHA (`CODEBUILD_RESOLVED_SOURCE_VERSION`), plus a
-  floating `:latest`. Both Build and Deploy stages compute this independently from their own
-  `CODEBUILD_RESOLVED_SOURCE_VERSION` rather than passing it as a CodePipeline artifact/variable.
+- Image tag = first 8 chars of the git commit SHA (`CODEBUILD_RESOLVED_SOURCE_VERSION`). Build
+  computes this itself from its own `CODEBUILD_RESOLVED_SOURCE_VERSION` rather than it being passed in
+  as a CodePipeline artifact/variable.
 
 ### contacts-micro-service on prod: what the first real deploy actually needed
 
