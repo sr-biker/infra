@@ -24,11 +24,19 @@ the whole system fits together — see `CLAUDE.md` for the detailed layout/modul
   checked-in `realm-export.json` on every restart. Issues the JWTs `contacts-micro-service`/
   `membership` validate for their write endpoints — see those repos' READMEs.
 - **CI**: `prod/cicd` provisions one CodePipeline per app (`customer-api-pipeline` for
-  `contacts-micro-service`, `membership-pipeline` for `membership`; see `modules/cicd`) — each just
-  `Source` → `Build` (docker build + push to that app's ECR repo). No Deploy stage: Argo CD's
-  `selfHeal` would just revert a `kubectl set image` step the moment it ran, since git
-  (`values-prod.yaml`'s `image.tag`) is the actual desired-state source of truth. "Deploy" here means
-  bumping that file and pushing, same as this repo's own tag-bump commits.
+  `contacts-micro-service`, `membership-pipeline` for `membership`; see `modules/cicd`) — each
+  `Source` → `Build`, where Build now does docker build + push to that app's ECR repo *and* the
+  GitOps handoff: it clones the app repo with a GitHub PAT (existing Secrets Manager secret,
+  `github_token_secret_name`), bumps `values-prod.yaml`'s `image.tag` to the new build, and pushes.
+  Still no separate Deploy stage — Argo CD's `selfHeal` would just revert a `kubectl set image` step
+  the moment it ran, since git is the actual desired-state source of truth — but the tag-bump commit
+  that used to be a manual step is now automated, and Argo CD's normal sync picks it up from there.
+  Both pipelines are `pipeline_type = V2` with a `trigger.git_configuration` push filter excluding
+  `values_file_path`, so that automated commit doesn't retrigger the same pipeline in a loop. Both
+  also share one `aws_codestarconnections_connection` (created by `customer-api-pipeline`'s module
+  instance, passed into `membership`'s via `codestar_connection_arn`) — a CodeStarConnections
+  connection authorizes the whole `sr-biker` GitHub account, not a single repo, so only one manual
+  console approval is needed, not one per app.
 
 ## What this repo does NOT own
 
