@@ -25,6 +25,9 @@ data:
   membership-db.sql: |
     CREATE USER membership WITH PASSWORD 'membership';
     CREATE DATABASE membership OWNER membership;
+  usermanager-db.sql: |
+    CREATE USER users WITH PASSWORD 'users';
+    CREATE DATABASE users OWNER users;
 ---
 apiVersion: apps/v1
 kind: Deployment

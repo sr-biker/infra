@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+    environment: local
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+        environment: local
+    spec:
+      containers:
+        - name: kafka
+          image: apache/kafka:latest
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka:9092
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            # "localhost", not the "kafka" Service name
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@localhost:9093
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            - name: KAFKA_NUM_PARTITIONS
+              value: "3"
+          ports:
+            - containerPort: 9092
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+          readinessProbe:
+            exec:
+              # kafka-topics.sh boots a fresh JVM per invocation -- timeoutSeconds is 15seconds
+              command: ["/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 15
+            failureThreshold: 6
+  # Each replica gets its own dedicated PVC (kafka-data-kafka-0, -1, -2, ...) rather than
+  # one shared PVC -- this is what makes StatefulSet meaningful here: a future multi-broker
+  # setup needs each broker's own persistent identity/data, not pods contending over one
+  # volume (which is also why, unlike the old Deployment version, there's no need for a
+  # Recreate-strategy workaround -- no shared mount for two pods to ever fight over).
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          environment: local
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels:
+    environment: local
+spec:
+  selector:
+    app: kafka
+  # Headless (clusterIP: None) -- required as the StatefulSet's governing serviceName,
+  # giving each replica a stable per-pod DNS name (kafka-0.kafka.<ns>.svc.cluster.local)
+  # once this scales beyond one broker. For today's single replica, "kafka:9092" still
+  # resolves straight to that one pod, so nothing client-facing changes.
+  clusterIP: None
+  # This single broker is also its own KRaft controller and must reach itself via this
+  # Service's DNS name (kafka:9093) to self-register -- but a Service only routes to pods
+  # that are already Ready, and the pod can't become Ready until that registration
+  # succeeds. publishNotReadyAddresses breaks that startup deadlock by making the pod
+  # reachable through the Service before its own readiness probe passes.
+  publishNotReadyAddresses: true
+  ports:
+    - port: 9092
+      targetPort: 9092
