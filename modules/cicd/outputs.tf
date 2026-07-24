@@ -13,3 +13,7 @@ output "github_connection_status" {
 output "artifact_bucket" {
   value = aws_s3_bucket.artifacts.bucket
 }
+
+output "evals_project_name" {
+  value = try(aws_codebuild_project.evals[0].name, null)
+}

@@ -154,6 +154,32 @@ resource "aws_ecr_lifecycle_policy" "membership" {
   })
 }
 
+resource "aws_ecr_repository" "studio_chatbot" {
+  name                 = "studio-chatbot"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "studio_chatbot" {
+  repository = aws_ecr_repository.studio_chatbot.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last 10 images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 10
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
 resource "aws_iam_role_policy" "ecr_pull" {
   name = "${var.name}-ecr-pull"
   role = aws_iam_role.node.id
@@ -181,6 +207,7 @@ resource "aws_iam_role_policy" "ecr_pull" {
         Resource = [
           aws_ecr_repository.contacts_micro_service.arn,
           aws_ecr_repository.membership.arn,
+          aws_ecr_repository.studio_chatbot.arn,
         ]
       },
     ]

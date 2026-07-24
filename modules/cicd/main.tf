@@ -73,9 +73,12 @@ resource "aws_iam_role_policy" "pipeline" {
         Resource = local.codestar_connection_arn
       },
       {
-        Effect   = "Allow"
-        Action   = ["codebuild:StartBuild", "codebuild:BatchGetBuilds"]
-        Resource = [aws_codebuild_project.build.arn]
+        Effect = "Allow"
+        Action = ["codebuild:StartBuild", "codebuild:BatchGetBuilds"]
+        Resource = compact([
+          aws_codebuild_project.build.arn,
+          try(aws_codebuild_project.evals[0].arn, null),
+        ])
       },
     ]
   })
@@ -137,6 +140,94 @@ resource "aws_iam_role_policy" "build" {
       },
     ]
   })
+}
+
+# --- IAM + CodeBuild: evals (gates Build -- see enable_evals_gate) ---
+data "aws_secretsmanager_secret" "openai_api_key" {
+  count = var.enable_evals_gate ? 1 : 0
+  name  = var.openai_api_key_secret_name
+}
+
+resource "aws_iam_role" "evals" {
+  count = var.enable_evals_gate ? 1 : 0
+  name  = "${var.name}-cicd-evals"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "codebuild.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "evals" {
+  count = var.enable_evals_gate ? 1 : 0
+  name  = "${var.name}-cicd-evals"
+  role  = aws_iam_role.evals[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/${var.name}-*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "${aws_s3_bucket.artifacts.arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "secretsmanager:GetSecretValue"
+        Resource = data.aws_secretsmanager_secret.openai_api_key[0].arn
+      },
+    ]
+  })
+}
+
+resource "aws_codebuild_project" "evals" {
+  count        = var.enable_evals_gate ? 1 : 0
+  name         = "${var.name}-evals"
+  service_role = aws_iam_role.evals[0].arn
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  # CodeBuild containers are ephemeral (fresh container per build, no persistent disk) -- this is the
+  # actual mechanism for cross-build caching: pip's ~/.cache/pip is zipped to this S3 prefix
+  # at the end of a build and restored at the start of the next one, the same role Maven's
+  # local .m2 repo plays across (persistent) local builds.
+  cache {
+    type     = "S3"
+    location = "${aws_s3_bucket.artifacts.bucket}/pip-cache"
+  }
+
+  environment {
+    type = "LINUX_CONTAINER"
+    # Not an ECR/CodeBuild-curated image (those don't ship Python 3.13) -- a public image
+    # reference works here the same as image_pull_credentials_type = "CODEBUILD" does for
+    # the Build stage's curated image, no registry auth needed for a public pull.
+    image                       = var.evals_compute_image
+    compute_type                = "BUILD_GENERAL1_SMALL"
+    privileged_mode             = true # evals stand up a throwaway `docker run` postgres
+    image_pull_credentials_type = "CODEBUILD"
+
+    environment_variable {
+      name  = "OPENAI_API_KEY"
+      value = "${data.aws_secretsmanager_secret.openai_api_key[0].name}:${var.openai_api_key_secret_json_key}"
+      type  = "SECRETS_MANAGER"
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = var.evals_buildspec
+  }
 }
 
 # --- CodeBuild: build (docker build + push) ---
@@ -253,6 +344,32 @@ resource "aws_codepipeline" "this" {
         ConnectionArn    = local.codestar_connection_arn
         FullRepositoryId = "${var.github_owner}/${var.github_repo}"
         BranchName       = var.github_branch
+      }
+    }
+  }
+
+  # Gates Build (and therefore the ECR push in it) behind a passing evals run -- a failed
+  # or in-progress Evals stage blocks CodePipeline from advancing to Build, same mechanism
+  # any failed stage uses, no extra wiring needed. Only present when enable_evals_gate is
+  # true (dynamic block with a 0- or 1-element list), since not every pipeline instance of
+  # this module has an evals suite to gate on.
+  dynamic "stage" {
+    for_each = var.enable_evals_gate ? [1] : []
+    content {
+      name = "Evals"
+
+      action {
+        name             = "Evals"
+        category         = "Build"
+        owner            = "AWS"
+        provider         = "CodeBuild"
+        version          = "1"
+        input_artifacts  = ["SourceOutput"]
+        output_artifacts = ["EvalsOutput"]
+
+        configuration = {
+          ProjectName = aws_codebuild_project.evals[0].name
+        }
       }
     }
   }

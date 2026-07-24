@@ -29,3 +29,11 @@ output "membership_ecr_repository_url" {
 output "membership_ecr_repository_arn" {
   value = aws_ecr_repository.membership.arn
 }
+
+output "studio_chatbot_ecr_repository_url" {
+  value = aws_ecr_repository.studio_chatbot.repository_url
+}
+
+output "studio_chatbot_ecr_repository_arn" {
+  value = aws_ecr_repository.studio_chatbot.arn
+}
